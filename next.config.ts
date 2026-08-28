@@ -6,9 +6,6 @@ const nextConfig: NextConfig = {
     // Type errors must fail the build. Never set this to true.
     ignoreBuildErrors: false,
   },
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
 };
 
 export default nextConfig;
