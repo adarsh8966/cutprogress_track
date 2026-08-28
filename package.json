@@ -4,6 +4,9 @@
   "private": true,
   "description": "CUT OS - a private fitness measurement and analytics platform",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
