@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { DatedValue, UserProfile } from '@/lib/types';
 import { trend, trendChange, MIN_POINTS_FOR_TREND } from '@/lib/analytics/trend';
 import { detectPlateau, MIN_LOGGING_ADHERENCE } from '@/lib/analytics/plateau';
-import { estimateTdee, priorTdee, mifflinStJeorBmr, activityFactorFromSteps } from '@/lib/analytics/tdee';
+import { estimateTdee, mifflinStJeorBmr, activityFactorFromSteps } from '@/lib/analytics/tdee';
 import { forecastTargetDate } from '@/lib/analytics/forecast';
 import { computeAdherence, targetAdherence, floorAdherence } from '@/lib/analytics/adherence';
 import { computeDataQuality } from '@/lib/analytics/dataQuality';

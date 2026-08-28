@@ -15,7 +15,7 @@
 import type { DatedValue, Derived, LocalDate } from '@/lib/types';
 import { derived, insufficient } from '@/lib/types';
 import { daysBetween } from '@/lib/normalization/dates';
-import { coverageOf, presentValues, roundTo, trailingWindow } from './series';
+import { coverageOf, roundTo, trailingWindow } from './series';
 
 export interface TrendResult {
   /** Change per week, in the series' own canonical unit. */

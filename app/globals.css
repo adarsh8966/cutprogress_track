@@ -17,9 +17,27 @@
   --color-ink-muted: #9aa2ab;
   --color-ink-faint: #5d666f;
 
+  /* UI accent, used for links and interactive text. Checked for WCAG text
+     contrast against --color-ground, not for chart-mark rules. */
   --color-accent: #7aa2f7;
   --color-accent-dim: #3d5a99;
 
+  /* CHART MARKS. Validated with the data-viz palette checker against the
+     --color-surface ground (#0e1011): all three sit inside the dark lightness
+     band L 0.48-0.67, clear the chroma floor, hold >= 3:1 contrast, and pass
+     all-pairs CVD separation (worst deutan dE 9.4). Do not tweak these by eye -
+     re-run the validator if they need to change. Slot 1 carries every
+     single-series chart; slots 2 and 3 exist only for the rare multi-series
+     case, and the palette stops at three by design. */
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  /* De-emphasis grey for context marks (raw daily readings behind a trend). */
+  --color-series-muted: #4b545c;
+
+  /* STATUS. Reserved for state, never reused as a series colour. Red and green
+     are close to indistinguishable under deuteranopia, so status is ALWAYS
+     rendered with its label alongside - never colour alone. See StatusDot. */
   --color-good: #3fb950;
   --color-warn: #d29922;
   --color-bad: #f85149;
