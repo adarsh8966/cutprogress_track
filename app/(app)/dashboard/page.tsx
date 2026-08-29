@@ -188,7 +188,11 @@ export default async function DashboardPage() {
           <Link href="/context" className="text-accent hover:underline">
             context pack
           </Link>{' '}
-          to hand the full picture to ChatGPT for the coaching call.
+          to hand the full picture to ChatGPT for the coaching call, or open{' '}
+          <Link href={`/day/${end}`} className="text-accent hover:underline">
+            today
+          </Link>{' '}
+          to see and correct the records behind these figures.
         </p>
       </Card>
 

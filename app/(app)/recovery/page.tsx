@@ -18,6 +18,7 @@
  * recorded" is answerable from one observation. A metric whose only reader is
  * the gated average vanishes from this page until half a month has been logged.
  */
+import Link from 'next/link';
 import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
@@ -266,7 +267,15 @@ export default async function RecoveryPage() {
               {recentCardio.map((session) => (
                 <li key={session.id} className="py-2">
                   <div className="flex flex-wrap items-baseline gap-x-3">
-                    <span className="tabular text-ink-muted">{session.date}</span>
+                    {/* The day view is where a cardio session can be corrected
+                        or withdrawn - it is summed, so re-logging it would give
+                        the day both readings. */}
+                    <Link
+                      href={`/day/${session.date}`}
+                      className="tabular text-ink-muted hover:text-accent hover:underline"
+                    >
+                      {session.date}
+                    </Link>
                     <span className="text-xs text-ink-faint">
                       {session.type.replaceAll('_', ' ').toLowerCase()}
                     </span>

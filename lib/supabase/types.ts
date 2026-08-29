@@ -44,7 +44,8 @@ export type RecommendationKindEnum =
 export type SystemEventKindEnum =
   | 'IMPORT_CONFIRMED' | 'IMPORT_DUPLICATE_REJECTED' | 'CANONICAL_RESOLVED'
   | 'TARGET_CHANGED' | 'RECOMMENDATION_GENERATED' | 'CONTEXT_EXPORTED'
-  | 'SAFETY_WARNING_ACKNOWLEDGED' | 'PROFILE_UPDATED';
+  | 'SAFETY_WARNING_ACKNOWLEDGED' | 'PROFILE_UPDATED'
+  | 'OBSERVATION_SUPERSEDED' | 'OBSERVATION_RESTORED';
 
 export type ProfileRow = {
   id: string;
@@ -81,6 +82,12 @@ export type BodyMeasurementRow = {
   notes: string | null;
   source: DataSourceEnum;
   import_id: string | null;
+  /**
+   * Set when a correction replaced this observation, or when the user withdrew
+   * it. NULL means live (migration 0012). The row is never deleted.
+   */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type MetricObservationRow = {
@@ -94,6 +101,12 @@ export type MetricObservationRow = {
   source: DataSourceEnum;
   import_id: string | null;
   notes: string | null;
+  /**
+   * Set when a correction replaced this observation, or when the user withdrew
+   * it. NULL means live (migration 0012). The row is never deleted.
+   */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type NutritionLogRow = {
@@ -111,6 +124,12 @@ export type NutritionLogRow = {
   notes: string | null;
   source: DataSourceEnum;
   import_id: string | null;
+  /**
+   * Set when a correction replaced this observation, or when the user withdrew
+   * it. NULL means live (migration 0012). The row is never deleted.
+   */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type SleepRecordRow = {
@@ -125,6 +144,12 @@ export type SleepRecordRow = {
   source: DataSourceEnum;
   import_id: string | null;
   notes: string | null;
+  /**
+   * Set when a correction replaced this observation, or when the user withdrew
+   * it. NULL means live (migration 0012). The row is never deleted.
+   */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type CardioSessionRow = {
@@ -312,6 +337,9 @@ type ServerDefaults = 'id' | 'created_at' | 'updated_at';
  */
 type SessionDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
 
+/** The same, for the scalar observation tables since migration 0012. */
+type ObservationDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
+
 type TableDef<Row, Insert = Row, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -325,16 +353,16 @@ export type Database = {
       profiles: TableDef<ProfileRow, Insertable<ProfileRow, 'created_at' | 'updated_at'>>;
       goals: TableDef<GoalRow, Insertable<GoalRow, ServerDefaults>>;
       body_measurements: TableDef<
-        BodyMeasurementRow, Insertable<BodyMeasurementRow, 'id' | 'created_at'>
+        BodyMeasurementRow, Insertable<BodyMeasurementRow, ObservationDefaults>
       >;
       metric_observations: TableDef<
-        MetricObservationRow, Insertable<MetricObservationRow, 'id' | 'created_at'>
+        MetricObservationRow, Insertable<MetricObservationRow, ObservationDefaults>
       >;
       nutrition_logs: TableDef<
-        NutritionLogRow, Insertable<NutritionLogRow, 'id' | 'created_at' | 'logged_at'>
+        NutritionLogRow, Insertable<NutritionLogRow, ObservationDefaults | 'logged_at'>
       >;
       sleep_records: TableDef<
-        SleepRecordRow, Insertable<SleepRecordRow, 'id' | 'created_at'>
+        SleepRecordRow, Insertable<SleepRecordRow, ObservationDefaults>
       >;
       cardio_sessions: TableDef<
         CardioSessionRow, Insertable<CardioSessionRow, SessionDefaults>

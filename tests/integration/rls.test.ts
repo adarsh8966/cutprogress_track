@@ -77,10 +77,19 @@ describe('row level security', () => {
     expect(after.rows).toHaveLength(1);
   });
 
+  /**
+   * 0012 gave the observation tables a narrow update, so this is no longer a
+   * silent no-op: the statement is REFUSED. That is the stronger of the two
+   * outcomes - a rejected write cannot be mistaken for a successful one - and
+   * it is what the column-level grant buys. The measurement is unchanged
+   * either way, which is the property spec §6 actually asks for.
+   */
   it('makes raw measurements unoverwritable (spec §6)', async () => {
-    await withUser(db, alice, async (tx) => {
-      await tx.query(`update body_measurements set weight_kg = 1`);
-    });
+    await expect(
+      withUser(db, alice, (tx) =>
+        tx.query(`update body_measurements set weight_kg = 1`),
+      ),
+    ).rejects.toThrow(/permission denied/i);
 
     const after = await withUser(db, alice, (tx) =>
       tx.query<{ weight_kg: string }>(`select weight_kg from body_measurements`),
@@ -88,12 +97,25 @@ describe('row level security', () => {
     expect(Number(after.rows[0]!.weight_kg)).toBeCloseTo(92.986, 3);
   });
 
+  /**
+   * THE OBSERVATION TABLES' PRIVILEGES, IN FULL.
+   *
+   * Each has select, insert, and - since 0011 for cardio and 0012 for the rest
+   * - an update policy, so a correction can mark the row it replaces as
+   * superseded. The policy alone would be far too much power: it would make
+   * every measurement editable in place and undo spec §48. So the UPDATE
+   * privilege is granted per COLUMN, and Postgres requires BOTH the policy and
+   * the column privilege. The measurement columns are not in the grant.
+   *
+   * None of them has a delete policy, and none ever should.
+   */
   it.each([
     'metric_observations',
     'nutrition_logs',
     'sleep_records',
     'body_measurements',
-  ])('grants no update or delete policy on %s', async (table) => {
+    'cardio_sessions',
+  ])('scopes %s to select, insert and the supersession columns', async (table) => {
     const { rows } = await db.query<{ cmd: string }>(
       `select cmd from pg_policies where tablename = $1`,
       [table],
@@ -101,35 +123,85 @@ describe('row level security', () => {
     const commands = rows.map((r) => r.cmd);
     expect(commands).toContain('SELECT');
     expect(commands).toContain('INSERT');
-    expect(commands).not.toContain('UPDATE');
-    expect(commands).not.toContain('DELETE');
-  });
-
-  /**
-   * cardio_sessions is the one observation table with an update policy, added
-   * in 0011 so a corrected import can mark the row it replaces as superseded.
-   * The policy alone would be too much power, so the privilege is granted per
-   * COLUMN: Postgres requires both, and the measurement columns are not in the
-   * grant. The measurement stays immutable; only the bookkeeping moves.
-   */
-  it('gives cardio_sessions an update policy scoped to the supersession columns', async () => {
-    const { rows } = await db.query<{ cmd: string }>(
-      `select cmd from pg_policies where tablename = 'cardio_sessions'`,
-    );
-    const commands = rows.map((r) => r.cmd);
-    expect(commands).toContain('SELECT');
-    expect(commands).toContain('INSERT');
     expect(commands).toContain('UPDATE');
+    // History is permanent. There is no delete policy on any of these.
     expect(commands).not.toContain('DELETE');
 
     const { rows: grants } = await db.query<{ column_name: string }>(
       `select column_name from information_schema.column_privileges
-        where table_name = 'cardio_sessions'
+        where table_name = $1
           and grantee = 'authenticated'
           and privilege_type = 'UPDATE'
         order by column_name`,
+      [table],
     );
     expect(grants.map((g) => g.column_name)).toEqual(['superseded_at', 'superseded_by']);
+  });
+
+  /**
+   * The privileges above, exercised rather than inspected. A grant that reads
+   * correctly in the catalogue and behaves differently is worth nothing.
+   */
+  describe('superseding an observation', () => {
+    it("lets a user withdraw their own observation without touching its value", async () => {
+      const id = await withUser(db, alice, async (tx) => {
+        const r = await tx.query<{ id: string }>(
+          `insert into sleep_records (user_id, local_date, duration_minutes)
+           values ($1, '2026-09-10', 450) returning id`,
+          [alice],
+        );
+        return r.rows[0]!.id;
+      });
+
+      await withUser(db, alice, (tx) =>
+        tx.query(`update sleep_records set superseded_at = now() where id = $1`, [id]),
+      );
+
+      const after = await withUser(db, alice, (tx) =>
+        tx.query<{ duration_minutes: string; superseded_at: string | null }>(
+          `select duration_minutes, superseded_at from sleep_records where id = $1`,
+          [id],
+        ),
+      );
+      // Still on disk, still holding what it measured, no longer live.
+      expect(Number(after.rows[0]!.duration_minutes)).toBe(450);
+      expect(after.rows[0]!.superseded_at).not.toBeNull();
+    });
+
+    it('refuses to change the measurement under cover of a supersession', async () => {
+      await expect(
+        withUser(db, alice, (tx) =>
+          tx.query(
+            `update sleep_records set superseded_at = now(), duration_minutes = 1`,
+          ),
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it("cannot reach another user's observation", async () => {
+      const { rows } = await withUser(db, bob, (tx) =>
+        tx.query(`update sleep_records set superseded_at = now() returning id`),
+      );
+      // RLS scopes the update to bob's own rows, and he has none here.
+      expect(rows).toHaveLength(0);
+    });
+
+    it('refuses a row that names a replacement without saying when', async () => {
+      const id = await withUser(db, alice, async (tx) => {
+        const r = await tx.query<{ id: string }>(
+          `insert into body_measurements (user_id, measured_at, local_date, weight_kg)
+           values ($1, now(), '2026-09-11', 93) returning id`,
+          [alice],
+        );
+        return r.rows[0]!.id;
+      });
+
+      await expect(
+        withUser(db, alice, (tx) =>
+          tx.query(`update body_measurements set superseded_by = $1 where id = $1`, [id]),
+        ),
+      ).rejects.toThrow(/supersession_coherent|not_self_superseding/i);
+    });
   });
 
   it.each(['system_events', 'context_exports'])(

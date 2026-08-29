@@ -10,6 +10,7 @@
  * the one comparison the user will make real decisions from. Stacked and
  * aligned answers the same question honestly.
  */
+import Link from 'next/link';
 import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
@@ -204,19 +205,31 @@ export default async function ProgressPage() {
             <div className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
               Recent measurements
             </div>
+            {/* Each row opens the day it was recorded on, which is where a
+                measurement can be corrected or withdrawn. A list of values with
+                nothing to click is where "how do I fix that?" used to end. */}
             <ul className="mt-2 divide-y divide-line/60 text-sm">
               {trailingWindow(weight, end, 10)
                 .filter((point) => point.value !== null)
                 .reverse()
                 .map((point) => (
-                  <li key={point.date} className="flex justify-between py-1.5">
-                    <span className="tabular text-ink-muted">{point.date}</span>
-                    <span className="tabular">
-                      {formatNumber(asWeight(point.value!), 1)} {label.weight}
-                    </span>
+                  <li key={point.date}>
+                    <Link
+                      href={`/day/${point.date}`}
+                      className="-mx-2 flex items-baseline justify-between gap-3 rounded px-2 py-2 transition-colors hover:bg-raised"
+                    >
+                      <span className="tabular text-ink-muted">{point.date}</span>
+                      <span className="tabular">
+                        {formatNumber(asWeight(point.value!), 1)} {label.weight}
+                      </span>
+                    </Link>
                   </li>
                 ))}
             </ul>
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Open a day to see every observation behind its figures, correct one, or
+              withdraw a record that should not count.
+            </p>
           </div>
         </Card>
       )}

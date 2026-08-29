@@ -14,15 +14,27 @@ import { QuickEntryForm } from '@/components/quick/QuickEntryForm';
 import { getProfile } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { todayForUser } from '@/app/actions/log';
+import { isLocalDate } from '@/lib/normalization/dates';
 import {
   WEIGHT_UNIT_LABEL, LENGTH_UNIT_LABEL, DISTANCE_UNIT_LABEL,
 } from '@/lib/normalization/units';
 
 export const dynamic = 'force-dynamic';
 
-export default async function QuickEntryPage() {
-  const profile = (await getProfile()) ?? DEFAULT_PROFILE;
-  const today = await todayForUser();
+export default async function QuickEntryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const [profileRow, today, query] = await Promise.all([
+    getProfile(), todayForUser(), searchParams,
+  ]);
+  const profile = profileRow ?? DEFAULT_PROFILE;
+  // "Add to this day" on the day view arrives here with a date. Anything that
+  // is not a real date falls back to today rather than being trusted into a
+  // form field that would then fail validation on submit.
+  const startDate =
+    query.date && isLocalDate(query.date) ? query.date : today;
 
   return (
     <div className="space-y-6">
@@ -36,7 +48,7 @@ export default async function QuickEntryPage() {
       </header>
 
       <QuickEntryForm
-        today={today}
+        today={startDate}
         weightUnit={WEIGHT_UNIT_LABEL[profile.weightDisplayUnit]}
         lengthUnit={LENGTH_UNIT_LABEL[profile.lengthDisplayUnit]}
         distanceUnit={DISTANCE_UNIT_LABEL[profile.distanceDisplayUnit]}

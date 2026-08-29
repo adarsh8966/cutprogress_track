@@ -70,6 +70,20 @@ export function LogCardioForm({
               error={errors.averageHeartRate}
             />
           </div>
+          {/* logCardio has accepted these since the importer started storing
+              them in 0010, and the cardio list on this very page displays them.
+              Only this form could not record them, so the same session logged
+              by hand kept less than the same session pasted in. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumberField
+              name="maxHeartRate" label="Maximum HR" unit="bpm"
+              error={errors.maxHeartRate}
+            />
+            <NumberField
+              name="calories" label="Calories burned" unit="kcal" step="1"
+              error={errors.calories}
+            />
+          </div>
         </>
       )}
     </ActionForm>
