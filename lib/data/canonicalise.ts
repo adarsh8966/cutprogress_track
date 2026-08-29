@@ -23,6 +23,26 @@ import { toNumber } from '@/lib/normalization/numbers';
 type Client = SupabaseClient<Database>;
 
 /**
+ * A timestamp column as a string the resolver can order.
+ *
+ * Same reasoning as toNumber() below: what a driver hands back for a
+ * `timestamptz` is not guaranteed to be a string. PostgREST serialises one to
+ * ISO-8601 text, PGlite returns a Date object, and Observation.recordedAt
+ * claims to be a string - so the claim is made true here rather than assumed.
+ *
+ * This matters more than it looks. recordedAt is what decides which of a day's
+ * observations is the current one, so a Date arriving where a string was
+ * expected does not degrade the ordering, it fails the whole day's rebuild.
+ * An unreadable timestamp becomes the empty string, which sorts oldest: a
+ * value that cannot say when it was recorded must not outrank one that can.
+ */
+function toIsoString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return '';
+}
+
+/**
  * Groups the day's raw rows into per-field observation lists.
  *
  * `value` is typed unknown because that is the truth about a column read back
@@ -35,12 +55,12 @@ function observation(
   id: string,
   value: unknown,
   source: DataSourceEnum,
-  recordedAt: string,
+  recordedAt: unknown,
   localDate: LocalDate,
 ): Observation | null {
   const numeric = toNumber(value);
   if (numeric === null) return null;
-  return { id, value: numeric, source, recordedAt, localDate };
+  return { id, value: numeric, source, recordedAt: toIsoString(recordedAt), localDate };
 }
 
 export async function rebuildDailyMetrics(

@@ -276,12 +276,13 @@ describe('recovery data path: import -> canonicalise -> query -> display', () =>
     expect(Number(rows[0]!.hrv_ms)).toBe(68);
   });
 
-  it('lets a hand-entered correction outrank an import on the same day', async () => {
+  it('breaks a same-instant tie by source priority', async () => {
     const date: LocalDate = '2026-07-15';
     await withUser(db, alice, async (tx) => {
-      // The import first, then the user correcting it by hand. Neither row is
-      // deleted - the raw layer keeps both (spec §6, §48) - and source priority
-      // decides which one becomes canonical.
+      // Both rows take their measured_at from the same now() inside one
+      // transaction, so they are recorded at the SAME INSTANT and recency
+      // cannot separate them. That is the question source priority answers.
+      // Neither row is deleted - the raw layer keeps both (spec §6, §48).
       await tx.query(
         `insert into metric_observations
            (user_id, metric, value, measured_at, local_date, source)
@@ -303,6 +304,84 @@ describe('recovery data path: import -> canonicalise -> query -> display', () =>
     expect(rows[0]!.provenance.restingHeartRate?.source).toBe('MANUAL');
     // Both readings competed; neither was discarded.
     expect(rows[0]!.provenance.restingHeartRate?.candidates).toBe(2);
+  });
+
+  /**
+   * The corrected-import bug, end to end through the real schema.
+   *
+   * Source priority used to beat recency outright, so a value typed by hand
+   * outranked every later correction from anywhere, permanently. The import was
+   * written, reported as imported, and the day kept showing the old number.
+   */
+  it('lets a later import correct a value entered by hand earlier', async () => {
+    const date: LocalDate = '2026-07-16';
+    await withUser(db, alice, async (tx) => {
+      await tx.query(
+        `insert into metric_observations
+           (user_id, metric, value, measured_at, local_date, source)
+         values ($1, 'RESTING_HEART_RATE', 71, now() - interval '6 hours', $2, 'MANUAL')`,
+        [alice, date],
+      );
+      await tx.query(
+        `insert into metric_observations
+           (user_id, metric, value, measured_at, local_date, source)
+         values ($1, 'RESTING_HEART_RATE', 57, now(), $2, 'IMPORT_TEXT')`,
+        [alice, date],
+      );
+      await rebuildDailyMetrics(supabaseOverPglite(tx) as never, alice, date);
+    });
+
+    const { rows } = await withUser(db, alice, (tx) =>
+      tx.query<{ rhr: string; provenance: Record<string, { source: string }> }>(
+        `select resting_heart_rate::text as rhr, provenance from daily_metrics
+           where local_date = $1`,
+        [date],
+      ),
+    );
+    expect(Number(rows[0]!.rhr)).toBe(57);
+    expect(rows[0]!.provenance.restingHeartRate?.source).toBe('IMPORT_TEXT');
+  });
+
+  /**
+   * Re-logging a value to correct it is the documented way to fix a scalar
+   * observation, and it used to CRASH the rebuild: measured_at comes back from
+   * the driver as a Date, and the resolver only compared timestamps when two
+   * observations shared a source - which is precisely this case. The day failed
+   * to canonicalise rather than resolving to the corrected value.
+   */
+  it('resolves a re-logged correction to the newer value', async () => {
+    const date: LocalDate = '2026-07-17';
+    await withUser(db, alice, async (tx) => {
+      await tx.query(
+        `insert into metric_observations
+           (user_id, metric, value, measured_at, local_date, source)
+         values ($1, 'HRV_MS', 41, now() - interval '2 hours', $2, 'MANUAL')`,
+        [alice, date],
+      );
+      await tx.query(
+        `insert into metric_observations
+           (user_id, metric, value, measured_at, local_date, source)
+         values ($1, 'HRV_MS', 68, now(), $2, 'MANUAL')`,
+        [alice, date],
+      );
+      await rebuildDailyMetrics(supabaseOverPglite(tx) as never, alice, date);
+    });
+
+    const { rows } = await withUser(db, alice, (tx) =>
+      tx.query<{
+        hrv: string;
+        provenance: Record<string, { candidates: number; sources: number; confidence: string }>;
+      }>(
+        `select hrv_ms::text as hrv, provenance from daily_metrics where local_date = $1`,
+        [date],
+      ),
+    );
+    expect(Number(rows[0]!.hrv)).toBe(68);
+    // Two observations, one source: a correction, not a disagreement. The
+    // confidence of the day must not drop because the user fixed a typo.
+    expect(rows[0]!.provenance.hrvMs?.candidates).toBe(2);
+    expect(rows[0]!.provenance.hrvMs?.sources).toBe(1);
+    expect(rows[0]!.provenance.hrvMs?.confidence).toBe('HIGH');
   });
 
   it('reads a real measured zero as zero, not as missing', async () => {

@@ -7,13 +7,31 @@
  * recording WHICH source won and HOW CONFIDENT that resolution is.
  *
  * Resolution rules, in order:
- *   1. Higher-priority source wins (priority is per-user configurable).
- *   2. Within a source, the most recent observation for the day wins.
+ *   1. The most recently recorded observation for the day wins.
+ *   2. A tie between observations recorded at the same instant is broken by
+ *      source priority (per-user configurable).
  *
- * Confidence reflects agreement, not source rank:
- *   HIGH      one source, or all candidates agree within tolerance
- *   MODERATE  candidates disagree slightly
- *   LOW       candidates disagree materially - worth the user looking
+ * RECENCY BEFORE PRIORITY, AND WHY IT CHANGED. Priority used to win outright,
+ * which meant a value typed by hand outranked every later correction from any
+ * other source, forever. Logging a weight by hand and then importing a
+ * corrected one for that day wrote the import faithfully, reported it as
+ * imported - and left the day showing the old number, with nothing anywhere
+ * saying so. Stored, confirmed, and invisible: the one failure this system
+ * exists to prevent. A correction is always the newer observation, so recency
+ * is what "which of these is current?" actually means. Priority still decides
+ * between two readings of the same moment, which is the question it answers.
+ *
+ * CORRECTIONS ARE NOT DISAGREEMENTS. Confidence and disagreement are measured
+ * across ONE VALUE PER SOURCE - that source's own latest. Comparing every
+ * observation would read a corrected weight (92.4 then 93.2, same source) as
+ * two sources at odds and quietly downgrade a day the user had just fixed.
+ * Two readings from one source are a correction; two sources that disagree are
+ * a conflict, and only the second is worth interrupting anyone about.
+ *
+ * Confidence reflects agreement between SOURCES, not source rank:
+ *   HIGH      one source, or every source's latest agrees within tolerance
+ *   MODERATE  sources disagree slightly
+ *   LOW       sources disagree materially - worth the user looking
  */
 import type { ConfidenceLevel, DataSource, LocalDate } from '@/lib/types';
 
@@ -32,7 +50,7 @@ export interface Observation {
   id: string;
   value: number;
   source: DataSource;
-  /** When the observation was recorded, for tie-breaking within a source. */
+  /** When the observation was recorded. The newest wins the day. */
   recordedAt: string;
   localDate: LocalDate;
 }
@@ -44,7 +62,16 @@ export interface Resolution {
   observationId: string;
   /** How many observations competed for this field. */
   candidates: number;
-  /** Spread between the highest and lowest candidate, in the field's unit. */
+  /**
+   * How many DISTINCT sources competed. `candidates` above it means at least
+   * one source was recorded more than once, which is a correction rather than
+   * a disagreement - the difference conflicts() below turns on.
+   */
+  sources: number;
+  /**
+   * Spread between the highest and lowest of the per-source latest values, in
+   * the field's unit. Null when only one source reported, however many times.
+   */
   disagreement: number | null;
 }
 
@@ -53,6 +80,12 @@ export interface ProvenanceEntry {
   confidence: ConfidenceLevel;
   observationId: string | null;
   candidates: number;
+  /**
+   * Distinct sources behind this value. Optional because provenance rows
+   * written before this field existed are still on disk and still readable -
+   * daily_metrics is a cache, but an old row stays valid until it is rebuilt.
+   */
+  sources?: number;
 }
 
 export type ProvenanceMap = Record<string, ProvenanceEntry>;
@@ -74,21 +107,40 @@ export function resolveObservations(
     priority[source] ?? DEFAULT_SOURCE_PRIORITY[source];
 
   const sorted = [...observations].sort((a, b) => {
-    const byPriority = rank(a.source) - rank(b.source);
-    if (byPriority !== 0) return byPriority;
-    // Same source: most recently recorded wins.
-    return b.recordedAt.localeCompare(a.recordedAt);
+    // The newest observation is the current one.
+    //
+    // Compared with < and >, not localeCompare: ISO-8601 timestamps sort
+    // correctly either way, and this one cannot throw if a caller hands over
+    // something that is not a string. A driver returning `timestamptz` as a
+    // Date object used to crash the sort here, which failed the rebuild for the
+    // whole day - a far worse outcome than an odd ordering. The conversion
+    // belongs at the boundary (lib/data/canonicalise.ts) and is done there; this
+    // is the belt to that pair of braces.
+    const byRecency =
+      a.recordedAt < b.recordedAt ? 1 : a.recordedAt > b.recordedAt ? -1 : 0;
+    if (byRecency !== 0) return byRecency;
+    // Recorded at the same instant: the higher-priority source wins.
+    return rank(a.source) - rank(b.source);
   });
 
   const winner = sorted[0]!;
 
-  const values = observations.map((o) => o.value);
+  // One value per source - its own latest, which `sorted` puts first. This is
+  // what keeps a correction from reading as a conflict.
+  const latestPerSource = new Map<DataSource, Observation>();
+  for (const observation of sorted) {
+    if (!latestPerSource.has(observation.source)) {
+      latestPerSource.set(observation.source, observation);
+    }
+  }
+
+  const values = [...latestPerSource.values()].map((o) => o.value);
   const spread = Math.max(...values) - Math.min(...values);
   const scale = Math.abs(winner.value) || 1;
   const relativeSpread = spread / scale;
 
   const confidence: ConfidenceLevel =
-    observations.length === 1 || relativeSpread <= AGREEMENT_TOLERANCE
+    latestPerSource.size === 1 || relativeSpread <= AGREEMENT_TOLERANCE
       ? 'HIGH'
       : relativeSpread <= AGREEMENT_TOLERANCE * 4
         ? 'MODERATE'
@@ -100,7 +152,8 @@ export function resolveObservations(
     confidence,
     observationId: winner.id,
     candidates: observations.length,
-    disagreement: observations.length > 1 ? spread : null,
+    sources: latestPerSource.size,
+    disagreement: latestPerSource.size > 1 ? spread : null,
   };
 }
 
@@ -126,15 +179,38 @@ export function resolveFields(
       confidence: resolution.confidence,
       observationId: resolution.observationId,
       candidates: resolution.candidates,
+      sources: resolution.sources,
     };
   }
 
   return { values, provenance };
 }
 
-/** Fields whose canonical value came from more than one disagreeing source. */
+/**
+ * Fields whose canonical value came from more than one DISAGREEING source.
+ *
+ * Deliberately not "more than one observation": correcting a weight by logging
+ * it again leaves two observations for the day, and calling that a conflict
+ * would interrupt the user every time they fixed a typo. `sources` is what
+ * separates the two; a provenance row written before that field existed falls
+ * back to `candidates`, which is the old, stricter reading.
+ */
 export function conflicts(provenance: ProvenanceMap): string[] {
   return Object.entries(provenance)
-    .filter(([, entry]) => entry.candidates > 1 && entry.confidence !== 'HIGH')
+    .filter(([, entry]) => (entry.sources ?? entry.candidates) > 1
+      && entry.confidence !== 'HIGH')
+    .map(([field]) => field);
+}
+
+/**
+ * Fields the day holds more observations of than sources - a value that was
+ * recorded and then recorded again by the same source. That is a correction,
+ * and it is worth being able to say so on screen rather than leaving the user
+ * to wonder which of their two entries the app is showing.
+ */
+export function corrections(provenance: ProvenanceMap): string[] {
+  return Object.entries(provenance)
+    .filter(([, entry]) => entry.sources !== undefined
+      && entry.candidates > entry.sources)
     .map(([field]) => field);
 }
