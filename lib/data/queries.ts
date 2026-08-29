@@ -10,42 +10,17 @@ import 'server-only';
  * about.
  */
 import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
+import { rowToProfile, rowsToDailyMetrics } from '@/lib/data/rows';
 import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { createServerComponentClient } from '@/lib/supabase/server';
 import { addDays, localToday } from '@/lib/normalization/dates';
-import type { ContextExportRow, ProfileRow, SystemEventRow } from '@/lib/supabase/types';
+import { toNumber } from '@/lib/normalization/numbers';
+import type { ContextExportRow, SystemEventRow } from '@/lib/supabase/types';
 
-/** null and undefined stay null. Only a real value becomes a number. */
-export function toNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export function rowToProfile(row: ProfileRow): UserProfile {
-  return {
-    heightCm: toNumber(row.height_cm),
-    sex: row.sex,
-    dateOfBirth: row.date_of_birth,
-    timezone: row.timezone,
-    startingWeightKg: toNumber(row.starting_weight_kg),
-    targetWeightKg: toNumber(row.target_weight_kg),
-    phase: row.phase,
-    targets: {
-      calories: toNumber(row.target_calories),
-      proteinG: toNumber(row.target_protein_g),
-      fiberG: toNumber(row.target_fiber_g),
-      steps: toNumber(row.target_steps),
-      trainingSessionsPerWeek: toNumber(row.target_training_sessions_per_week),
-      cardioMinutesPerWeek: toNumber(row.target_cardio_minutes_per_week),
-    },
-    maxWeeklyLossRatePct: toNumber(row.max_weekly_loss_rate_pct) ?? 1,
-    cutStartDate: row.cut_start_date,
-    weightDisplayUnit: row.weight_display_unit,
-    distanceDisplayUnit: row.distance_display_unit,
-    lengthDisplayUnit: row.length_display_unit,
-  };
-}
+// Defined in lib/normalization so the canonical resolver can use it too, and
+// re-exported here because this is where the codebase already imports it from.
+export { toNumber };
+export { rowToProfile, rowToDailyMetrics, rowsToDailyMetrics } from '@/lib/data/rows';
 
 export async function getProfile(): Promise<UserProfile | null> {
   const supabase = await createServerComponentClient();
@@ -68,28 +43,10 @@ export async function getDailyMetrics(
 
   if (error || !data) return [];
 
-  return data.map((row) => ({
-    localDate: row.local_date,
-    weightKg: toNumber(row.weight_kg),
-    waistCm: toNumber(row.waist_cm),
-    steps: toNumber(row.steps),
-    activeCalories: toNumber(row.active_calories),
-    totalCaloriesBurned: toNumber(row.total_calories_burned),
-    workoutMinutes: toNumber(row.workout_minutes),
-    cardioMinutes: toNumber(row.cardio_minutes),
-    zone2Minutes: toNumber(row.zone2_minutes),
-    restingHeartRate: toNumber(row.resting_heart_rate),
-    hrvMs: toNumber(row.hrv_ms),
-    sleepDurationMinutes: toNumber(row.sleep_duration_minutes),
-    sleepScore: toNumber(row.sleep_score),
-    caloriesConsumed: toNumber(row.calories_consumed),
-    proteinG: toNumber(row.protein_g),
-    carbsG: toNumber(row.carbs_g),
-    fatG: toNumber(row.fat_g),
-    fiberG: toNumber(row.fiber_g),
-    fruitVegServings: toNumber(row.fruit_veg_servings),
-    trainingSessions: toNumber(row.training_sessions),
-  }));
+  // The mapping itself lives in lib/data/rows.ts so that it can be tested
+  // without a database - a column that is selected but never mapped is exactly
+  // the kind of silent data loss this file's header warns about.
+  return rowsToDailyMetrics(data);
 }
 
 export async function getLoggedSets(from: LocalDate, to: LocalDate): Promise<LoggedSet[]> {

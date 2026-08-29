@@ -70,7 +70,7 @@ export function LogMetricsForm({ today }: { today: string }) {
   return (
     <ActionForm action={logDailyMetrics} submitLabel="Record metrics">
       {(errors) => (
-        <div className="grid gap-4 sm:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <TextField
             name="date" label="Date" type="date" required
             defaultValue={today} error={errors.date}
@@ -79,6 +79,13 @@ export function LogMetricsForm({ today }: { today: string }) {
           <NumberField
             name="activeCalories" label="Active calories" unit="kcal"
             error={errors.activeCalories}
+          />
+          {/* logDailyMetrics has accepted this since TOTAL_CALORIES_BURNED got
+              its writer, but only Quick Entry offered the field, so the same
+              measurement could be recorded in one place and not the other. */}
+          <NumberField
+            name="totalCaloriesBurned" label="Total calories burned" unit="kcal"
+            step="1" error={errors.totalCaloriesBurned}
           />
           <NumberField
             name="restingHeartRate" label="Resting HR" unit="bpm"

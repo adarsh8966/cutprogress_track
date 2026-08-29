@@ -61,6 +61,18 @@ export interface Derived<T> {
   confidence: DerivedConfidence;
   /** Human-readable caveats, e.g. why the value is null. */
   notes: string[];
+  /**
+   * How many real measurements the method found, where it counted them.
+   *
+   * This exists so that a null value can say WHICH kind of nothing it is. Zero
+   * means the metric was never logged; a positive number means measurements do
+   * exist but were not enough to compute this particular figure. Rendering
+   * those two as the same sentence tells the user their data was never
+   * recorded, which is a different - and false - claim (spec §33).
+   *
+   * Optional: a method that has no meaningful count of inputs simply omits it.
+   */
+  observations?: number;
 }
 
 export function derived<T>(
@@ -69,15 +81,26 @@ export function derived<T>(
   inputs: Record<string, unknown>,
   confidence: DerivedConfidence,
   notes: string[] = [],
+  observations?: number,
 ): Derived<T> {
-  return { value, method, inputs, confidence, notes };
+  return {
+    value, method, inputs, confidence, notes,
+    ...(observations === undefined ? {} : { observations }),
+  };
 }
 
-/** A derived value that could not be computed, with the reason recorded. */
+/**
+ * A derived value that could not be computed, with the reason recorded.
+ *
+ * `observations` is how many measurements were found anyway. Pass it whenever
+ * the method knows: it is the difference between "not logged" and "not enough
+ * data" everywhere this value is displayed.
+ */
 export function insufficient<T>(
   method: string,
   inputs: Record<string, unknown>,
   reason: string,
+  observations?: number,
 ): Derived<T> {
   return {
     value: null,
@@ -85,7 +108,17 @@ export function insufficient<T>(
     inputs,
     confidence: 'INSUFFICIENT',
     notes: [reason],
+    ...(observations === undefined ? {} : { observations }),
   };
+}
+
+/**
+ * True when a Derived<T> has no value BUT measurements exist - the figure was
+ * refused for want of coverage, not for want of data. The UI and the Context
+ * Pack both need this distinction, so it is defined once here.
+ */
+export function isInsufficientNotAbsent(d: Derived<unknown>): boolean {
+  return d.value === null && (d.observations ?? 0) > 0;
 }
 
 /** One day of canonical, resolved metrics. Every measurement may be null. */

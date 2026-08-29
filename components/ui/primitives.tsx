@@ -5,11 +5,17 @@
  *
  *  - A null measurement renders as "not logged", never as 0 or a dash that
  *    could be mistaken for zero (spec §33).
+ *  - A figure that could not be COMPUTED does not borrow that sentence. See
+ *    DerivedFigure: "not logged" is a claim about the data, and making it about
+ *    a value that was merely too sparse to average tells the user their
+ *    measurements were never recorded.
  *  - A status colour never appears without its label, because red and green are
  *    close to indistinguishable under deuteranopia (spec §49 and the data-viz
  *    accessibility rule).
  */
 import type { ReactNode } from 'react';
+import type { Derived } from '@/lib/types';
+import { isInsufficientNotAbsent } from '@/lib/types';
 
 export type Status = 'good' | 'warn' | 'bad' | 'neutral';
 
@@ -113,6 +119,78 @@ export function Figure({
       {sub && <div className="mt-2 text-xs text-ink-muted">{sub}</div>}
     </div>
   );
+}
+
+/**
+ * A headline figure backed by a Derived<T>, which is every computed number in
+ * the app.
+ *
+ * THE DISTINCTION THIS EXISTS TO KEEP. `Derived.value === null` covers two
+ * different facts, and they must not read the same:
+ *
+ *   nothing was ever measured        -> "not logged"
+ *   measured, but not enough of it   -> "not enough data", with the count
+ *
+ * Collapsing them is how four days of imported resting heart rate and HRV came
+ * to be reported as never recorded: the 30-day average correctly refused to be
+ * computed from 13% coverage, and the refusal was then rendered as absence.
+ * The gate was right; the sentence was wrong.
+ *
+ * The count comes from Derived.observations, so any calculation that reports
+ * one gets this behaviour without the page knowing anything about coverage.
+ */
+export function DerivedFigure<T>({
+  derived,
+  format,
+  unit,
+  label,
+  sub,
+  size = 'md',
+}: {
+  derived: Derived<T>;
+  /** Canonical value -> display string. Units convert here, not upstream. */
+  format: (value: T) => string;
+  unit?: string;
+  label?: string;
+  sub?: ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'hero';
+}) {
+  if (derived.value !== null) {
+    return (
+      <Figure
+        value={format(derived.value)}
+        unit={unit}
+        label={label}
+        sub={sub}
+        size={size}
+      />
+    );
+  }
+
+  // Measurements exist; this particular figure could not be built from them.
+  // Naming the count is what makes the difference legible - and it points at
+  // the fix, which is more days, not re-entering the data.
+  if (isInsufficientNotAbsent(derived)) {
+    const days = derived.observations!;
+    const window = derived.inputs.windowDays ?? derived.inputs.searchWindowDays;
+    return (
+      <div>
+        {label && (
+          <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-ink-faint">
+            {label}
+          </div>
+        )}
+        <div className="text-base text-ink-faint">not enough data</div>
+        <div className="mt-1 text-xs text-ink-faint">
+          {days} day{days === 1 ? '' : 's'} logged
+          {typeof window === 'number' ? ` of ${window}` : ''}
+        </div>
+        {sub && <div className="mt-2 text-xs text-ink-muted">{sub}</div>}
+      </div>
+    );
+  }
+
+  return <Figure value={null} unit={unit} label={label} sub={sub} size={size} />;
 }
 
 /**

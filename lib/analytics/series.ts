@@ -10,8 +10,23 @@
  * are different questions. Everything here answers the first and reports
  * coverage, so the caller can never silently confuse them.
  */
-import type { DatedValue, LocalDate } from '@/lib/types';
+import type { DailyMetrics, DatedValue, LocalDate } from '@/lib/types';
 import { addDays, compareDates, daysBetween } from '@/lib/normalization/dates';
+
+/**
+ * One numeric field of the canonical day rows, as a dated series.
+ *
+ * Absent and non-numeric both become null, so a field that was never measured
+ * cannot arrive downstream looking like a zero (spec §33). Defined once here
+ * because the Recovery page, the Context Pack and the analytics tests were each
+ * carrying their own copy of it.
+ */
+export function pickMetric(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
+  return days.map((day) => {
+    const value = day[key];
+    return { date: day.localDate, value: typeof value === 'number' ? value : null };
+  });
+}
 
 export interface Coverage {
   /** Days in the requested window. */
