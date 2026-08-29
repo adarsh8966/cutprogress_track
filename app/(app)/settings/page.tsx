@@ -5,6 +5,7 @@
  * are visible: "Don't silently change someone's target."
  */
 import { getProfile, getSystemEvents } from '@/lib/data/queries';
+import { signOut } from '@/app/actions/auth';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { SettingsForm } from '@/components/dashboard/SettingsForm';
 import { Card } from '@/components/ui/primitives';
@@ -61,6 +62,23 @@ export default async function SettingsPage() {
             ))}
           </ul>
         )}
+      </Card>
+
+      <Card title="Session">
+        <p className="mb-4 text-xs leading-relaxed text-ink-muted">
+          You stay signed in on this device across refreshes, restarts and future
+          visits - the session is held in a long-lived cookie and renewed in the
+          background. Signing out ends it immediately on this device and returns
+          you to the sign-in screen.
+        </p>
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="rounded border border-line-strong px-4 py-2 text-sm transition-colors hover:border-bad hover:text-bad"
+          >
+            Sign out
+          </button>
+        </form>
       </Card>
 
       <Card title="Privacy">
