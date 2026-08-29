@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { createActionClient } from '@/lib/supabase/server';
 import { rebuildRange } from '@/lib/data/canonicalise';
-import { getProfile } from '@/lib/data/queries';
+import { getProfile, rowToDailyMetrics } from '@/lib/data/queries';
 import {
   parseText, PARSER_NAME, PARSER_VERSION,
   type ParsedField, type NotStored, type SessionKind,
@@ -38,6 +38,8 @@ import {
 import { idempotencyKey } from '@/lib/health/idempotency';
 import { isLocalDate, localToday } from '@/lib/normalization/dates';
 import { OBSERVATION_RANGES, type ObservationKey } from '@/lib/validation/observations';
+import { UNKNOWN_DAY, type ExistingDay } from '@/lib/health/importStatus';
+import type { ProvenanceMap } from '@/lib/normalization/canonical';
 import type { LocalDate } from '@/lib/types';
 import type { CardioTypeEnum, SessionTypeEnum } from '@/lib/supabase/types';
 
@@ -103,6 +105,20 @@ export interface PreviewRecord {
    * named rather than the banners implying they still apply.
    */
   checkedDate: LocalDate;
+  /**
+   * What this day already resolves to, per canonical field, with the source
+   * that won each one.
+   *
+   * This is what lets the review say NEW, UPDATED, DUPLICATE or CONFLICT per
+   * VALUE rather than only counting rows. Without it the screen can promise
+   * that a number will be written, but not what it will do to the day - and a
+   * value that replaces 1,950 kcal with 2,001 kcal reads exactly like one that
+   * adds 2,001 kcal to an empty day.
+   *
+   * `known: false` means the lookup failed, which the review reports as
+   * unknown rather than as an empty day.
+   */
+  existingDay: ExistingDay;
 }
 
 export interface ParsePreview {
@@ -118,6 +134,11 @@ export interface ParsePreview {
    * review screen cannot say whether importing will add to existing ones.
    */
   sessionCheckFailed: boolean;
+  /**
+   * True when the canonical values for these days could not be read, so the
+   * per-value verdicts fall back to "will be recorded, effect unknown".
+   */
+  dayCheckFailed: boolean;
   parserName: string;
   parserVersion: string;
 }
@@ -144,6 +165,10 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
   const priorImports = new Map<string, { created_at: string; status: string }>();
   const priorSessions = new Map<string, number>();
   const priorSessionRows = new Map<string, ExistingSession[]>();
+  const priorDays = new Map<string, ExistingDay>();
+
+  /** Every date the review will show, whether or not the paste carried one. */
+  const targetDates = [...new Set(result.records.map((r) => r.localDate ?? today))];
 
   // Not being able to identify the user means neither check below runs at all,
   // which must read as "unknown", not as "no repeats and no existing sessions".
@@ -212,6 +237,44 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
     }
   }
 
+  // What each of those days currently resolves to, so the review can say what
+  // confirming will DO to a value rather than only that it will be written.
+  let dayCheckFailed = userId === null && targetDates.length > 0;
+  if (userId && targetDates.length > 0) {
+    const { data: days, error } = await supabase
+      .from('daily_metrics')
+      .select('*')
+      .in('local_date', targetDates);
+    // A failed read must not read as "this day is empty", which would show
+    // every field as NEW and promise the user they were adding rather than
+    // replacing.
+    if (error) dayCheckFailed = true;
+    for (const row of days ?? []) {
+      const provenance = (row.provenance ?? {}) as unknown as ProvenanceMap;
+      const metrics = rowToDailyMetrics(row);
+      priorDays.set(row.local_date, {
+        known: true,
+        values: {
+          weightKg: metrics.weightKg,
+          waistCm: metrics.waistCm,
+          caloriesConsumed: metrics.caloriesConsumed,
+          proteinG: metrics.proteinG,
+          carbsG: metrics.carbsG,
+          fatG: metrics.fatG,
+          fiberG: metrics.fiberG,
+          steps: metrics.steps,
+          activeCalories: metrics.activeCalories,
+          restingHeartRate: metrics.restingHeartRate,
+          hrvMs: metrics.hrvMs,
+          sleepDurationMinutes: metrics.sleepDurationMinutes,
+        },
+        sources: Object.fromEntries(
+          Object.entries(provenance).map(([field, entry]) => [field, entry.source]),
+        ),
+      });
+    }
+  }
+
   const records: PreviewRecord[] = [];
   result.records.forEach((record, index) => {
     // The idempotency key is checked BEFORE the user fills anything in, so a
@@ -256,6 +319,12 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
         : [],
       /** The date `alreadyImported` was checked against, which the reviewer may change. */
       checkedDate: sessionDate,
+      // A day with no canonical row is an empty day, not an unreadable one -
+      // so it is `known` with no values, which reads as NEW rather than as
+      // "could not be checked".
+      existingDay: dayCheckFailed
+        ? UNKNOWN_DAY
+        : priorDays.get(sessionDate) ?? { values: {}, sources: {}, known: true },
     });
   });
 
@@ -263,6 +332,7 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
     records,
     duplicateCheckFailed,
     sessionCheckFailed,
+    dayCheckFailed,
     parserName: result.parserName,
     parserVersion: result.parserVersion,
   };

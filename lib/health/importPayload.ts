@@ -379,3 +379,92 @@ export function summariseWrites(record: ConfirmRecordValues): string[] {
 
   return parts;
 }
+
+// ---------------------------------------------------------------------------
+// What an import actually did
+// ---------------------------------------------------------------------------
+
+/**
+ * Where each raw table's rows show up, for the report after a confirm.
+ *
+ * Keyed by table because that is what the importer reports writing. Turning
+ * `{ table: 'metric_observations', rows: 4 }` into "Activity and vitals: 4
+ * recorded" is the whole difference between "Imported 9 rows." and a report a
+ * person can check against what they pasted.
+ */
+export const WROTE_DESTINATION: Record<string, { group: string; where: string }> = {
+  body_measurements: { group: 'Body', where: 'Dashboard, Progress' },
+  nutrition_logs: { group: 'Nutrition', where: 'Nutrition' },
+  metric_observations: { group: 'Activity and vitals', where: 'Recovery, Dashboard' },
+  sleep_records: { group: 'Sleep', where: 'Recovery' },
+  workout_sessions: { group: 'Training', where: 'Training' },
+  cardio_sessions: { group: 'Cardio', where: 'Recovery' },
+};
+
+export interface ImportGroupSummary {
+  group: string;
+  where: string;
+  rows: number;
+}
+
+export interface ImportSummary {
+  /** Days that wrote at least one row. */
+  imported: number;
+  /** Days refused as an exact repeat (spec §38). */
+  duplicates: number;
+  /** Days that carried nothing to import. */
+  skipped: number;
+  /** Days that could not be saved. */
+  failed: number;
+  /** Rows written, grouped by where they can be seen. */
+  groups: ImportGroupSummary[];
+  totalRows: number;
+  /** Days that were imported but wrote nothing new, e.g. a resumed attempt. */
+  noChange: number;
+}
+
+/** The shape summariseImport needs from an ImportResult. See app/actions/import.ts. */
+export interface OutcomeLike {
+  status: 'IMPORTED' | 'DUPLICATE' | 'SKIPPED' | 'FAILED';
+  wrote: { table: string; rows: number }[];
+}
+
+/**
+ * The report the user gets after confirming, from what the importer actually
+ * wrote rather than from what the review predicted.
+ *
+ * The two are checked against each other by eye, which is the point: if the
+ * review promised a nutrition log and the report has none, that is visible.
+ */
+export function summariseImport(records: OutcomeLike[]): ImportSummary {
+  const byGroup = new Map<string, ImportGroupSummary>();
+  let totalRows = 0;
+
+  for (const record of records) {
+    for (const { table, rows } of record.wrote) {
+      const destination = WROTE_DESTINATION[table]
+        // A table with no entry is still reported, under its own name, rather
+        // than silently dropped from the total.
+        ?? { group: table.replaceAll('_', ' '), where: 'not mapped to a page' };
+      const existing = byGroup.get(destination.group);
+      if (existing) existing.rows += rows;
+      else byGroup.set(destination.group, { ...destination, rows });
+      totalRows += rows;
+    }
+  }
+
+  const counted = (status: OutcomeLike['status']) =>
+    records.filter((record) => record.status === status).length;
+
+  return {
+    imported: counted('IMPORTED'),
+    duplicates: counted('DUPLICATE'),
+    skipped: counted('SKIPPED'),
+    failed: counted('FAILED'),
+    noChange: records.filter(
+      (record) => record.status === 'IMPORTED' && record.wrote.length === 0,
+    ).length,
+    groups: [...byGroup.values()].sort((a, b) => a.group.localeCompare(b.group)),
+    totalRows,
+  };
+}
