@@ -18,19 +18,29 @@ import type { Database, DataSourceEnum } from '@/lib/supabase/types';
 import {
   resolveFields, type Observation, type ProvenanceMap,
 } from '@/lib/normalization/canonical';
+import { toNumber } from '@/lib/normalization/numbers';
 
 type Client = SupabaseClient<Database>;
 
-/** Groups the day's raw rows into per-field observation lists. */
+/**
+ * Groups the day's raw rows into per-field observation lists.
+ *
+ * `value` is typed unknown because that is the truth about a column read back
+ * through PostgREST, which returns numerics as strings in some configurations.
+ * toNumber() is what makes Observation.value: number an honest claim instead of
+ * a cast that happens to survive on JavaScript's coercion rules - and it keeps
+ * null as null rather than turning an unmeasured field into a zero (spec §33).
+ */
 function observation(
   id: string,
-  value: number | null,
+  value: unknown,
   source: DataSourceEnum,
   recordedAt: string,
   localDate: LocalDate,
 ): Observation | null {
-  if (value === null) return null;
-  return { id, value, source, recordedAt, localDate };
+  const numeric = toNumber(value);
+  if (numeric === null) return null;
+  return { id, value: numeric, source, recordedAt, localDate };
 }
 
 export async function rebuildDailyMetrics(
@@ -108,17 +118,17 @@ export async function rebuildDailyMetrics(
   const cardioRows = (cardio.data ?? []).filter((r) => r.superseded_at === null);
   const sessionRows = (sessions.data ?? []).filter((r) => r.superseded_at === null);
 
+  const minutes = (r: { duration_minutes: unknown }) => toNumber(r.duration_minutes) ?? 0;
+
   const cardioMinutes = cardioRows.length
-    ? cardioRows.reduce((total, r) => total + Number(r.duration_minutes ?? 0), 0)
+    ? cardioRows.reduce((total, r) => total + minutes(r), 0)
     : null;
   const zone2Minutes = cardioRows.length
-    ? cardioRows
-        .filter((r) => r.hr_zone === 2)
-        .reduce((total, r) => total + Number(r.duration_minutes ?? 0), 0)
+    ? cardioRows.filter((r) => r.hr_zone === 2).reduce((total, r) => total + minutes(r), 0)
     : null;
   const completed = sessionRows.filter((r) => r.completed);
   const workoutMinutes = completed.length
-    ? completed.reduce((total, r) => total + Number(r.duration_minutes ?? 0), 0)
+    ? completed.reduce((total, r) => total + minutes(r), 0)
     : null;
   const trainingSessions = sessionRows.length ? completed.length : null;
 

@@ -5,59 +5,68 @@
  * not an instruction to skip the gym. So this page reports and contextualises,
  * and the one interpretive line it prints is conditional on performance also
  * declining. It never tells the user not to train.
+ *
+ * Every figure comes from recoverySummary() in lib/analytics/recovery.ts. The
+ * page does no arithmetic of its own, because a calculation that only exists
+ * inside a server component cannot be tested - which is how resting heart rate
+ * and HRV were reported as "not logged" for four days that were imported,
+ * stored and canonicalised correctly.
+ *
+ * EVERY METRIC HERE IS READ TWO WAYS: the latest actual reading, and the 30-day
+ * average. The average is gated on coverage and will decline to be computed
+ * from a handful of days; the latest reading is not, because "what was last
+ * recorded" is answerable from one observation. A metric whose only reader is
+ * the gated average vanishes from this page until half a month has been logged.
  */
 import { getAnalyticsWindow } from '@/lib/data/queries';
-import { Card, Figure, formatNumber } from '@/components/ui/primitives';
+import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
 import { BarSeries } from '@/components/charts/BarSeries';
 import { LogSleepForm, LogCardioForm, LogMetricsForm } from '@/components/dashboard/LogRecoveryForms';
-import { trailingAverage } from '@/lib/analytics/movingAverage';
-import { densify, presentValues, trailingWindow } from '@/lib/analytics/series';
-import { addDays } from '@/lib/normalization/dates';
+import { recoverySummary } from '@/lib/analytics/recovery';
+import { densify } from '@/lib/analytics/series';
+import { addDays, formatShortDate } from '@/lib/normalization/dates';
 import { kmToMiles } from '@/lib/normalization/units';
 import { todayForUser } from '@/app/actions/log';
-import type { DailyMetrics, DatedValue } from '@/lib/types';
+import type { Derived } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
-
-function pick(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
-  return days.map((day) => {
-    const value = day[key];
-    return { date: day.localDate, value: typeof value === 'number' ? value : null };
-  });
-}
 
 function formatSleep(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${Math.round(minutes - hours * 60)}m`;
 }
 
+const whole = (value: number) => formatNumber(value, 0);
+
+/**
+ * "measured 28 Aug" under a latest reading.
+ *
+ * The date is not decoration. A resting heart rate from five days ago is a fact
+ * about five days ago, and a figure that does not say when it was taken invites
+ * being read as today's.
+ */
+function measuredOn(reading: Derived<number>) {
+  const observedOn = reading.inputs.observedOn;
+  if (reading.value === null || typeof observedOn !== 'string') return undefined;
+  const age = reading.inputs.ageDays;
+  return (
+    <span>
+      measured {formatShortDate(observedOn)}
+      {age === 0 ? ' (today)' : ''}
+    </span>
+  );
+}
+
 export default async function RecoveryPage() {
   const { end, metrics, cardio } = await getAnalyticsWindow();
   const today = await todayForUser();
 
-  const sleep = pick(metrics, 'sleepDurationMinutes');
-  const rhr = pick(metrics, 'restingHeartRate');
-  const hrv = pick(metrics, 'hrvMs');
-  const steps = pick(metrics, 'steps');
-
-  const sleep7 = trailingAverage(sleep, end, 7, { label: 'Sleep 7-day average' });
-  const sleep30 = trailingAverage(sleep, end, 30, { label: 'Sleep 30-day average' });
-  const rhr30 = trailingAverage(rhr, end, 30, { label: 'Resting HR 30-day average' });
-  const hrv30 = trailingAverage(hrv, end, 30, { label: 'HRV 30-day average' });
-  const sleepScore30 = trailingAverage(
-    pick(metrics, 'sleepScore'), end, 30, { label: 'Sleep score 30-day average' },
-  );
-  const todayRow = metrics.find((day) => day.localDate === end) ?? null;
+  const recovery = recoverySummary(metrics, end);
+  const { restingHeartRate, hrv, sleepScore, totalCaloriesBurned } = recovery;
 
   const recentCardio = cardio.slice(0, 12);
-  const zone2 = presentValues(
-    trailingWindow(pick(metrics, 'zone2Minutes'), end, 28).map((p) => p.value),
-  ).reduce((total, v) => total + v, 0);
-
-  // Spec §14: informational only, and phrased as a consideration, not a gate.
-  const belowBaseline =
-    sleep7.value !== null && sleep30.value !== null && sleep7.value < sleep30.value * 0.9;
+  const chartStart = addDays(end, -29);
 
   return (
     <div className="space-y-8">
@@ -69,11 +78,11 @@ export default async function RecoveryPage() {
         </p>
       </header>
 
-      {belowBaseline && (
+      {recovery.belowBaseline && (
         <p className="rounded border border-warn/40 bg-warn/5 px-4 py-3 text-sm leading-relaxed text-warn">
           Recovery is below your own baseline: the last 7 days average{' '}
-          {formatSleep(sleep7.value!)} against a 30-day average of{' '}
-          {formatSleep(sleep30.value!)}. Consider reducing training intensity{' '}
+          {formatSleep(recovery.sleep7.value!)} against a 30-day average of{' '}
+          {formatSleep(recovery.sleep30.value!)}. Consider reducing training intensity{' '}
           <span className="text-ink-muted">
             if your performance is also declining
           </span>
@@ -83,70 +92,132 @@ export default async function RecoveryPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card title="Sleep (7-day)">
-          <Figure
-            value={sleep7.value === null ? null : formatSleep(sleep7.value)}
-            size="sm"
-          />
-          <Evidence derived={sleep7} />
+          <DerivedFigure derived={recovery.sleep7} format={formatSleep} size="sm" />
+          <Evidence derived={recovery.sleep7} />
         </Card>
         <Card title="Sleep (30-day)">
-          <Figure
-            value={sleep30.value === null ? null : formatSleep(sleep30.value)}
-            size="sm"
-          />
+          <DerivedFigure derived={recovery.sleep30} format={formatSleep} size="sm" />
+          <Evidence derived={recovery.sleep30} />
         </Card>
         <Card title="Resting heart rate">
-          <Figure
-            value={rhr30.value === null ? null : formatNumber(rhr30.value, 0)}
+          <DerivedFigure
+            derived={restingHeartRate.latest}
+            format={whole}
             unit="bpm"
             size="sm"
+            sub={measuredOn(restingHeartRate.latest)}
           />
-          <Evidence derived={rhr30} />
+          <Evidence derived={restingHeartRate.latest} />
         </Card>
         <Card title="HRV">
-          <Figure
-            value={hrv30.value === null ? null : formatNumber(hrv30.value, 0)}
+          <DerivedFigure
+            derived={hrv.latest}
+            format={whole}
             unit="ms"
             size="sm"
+            sub={measuredOn(hrv.latest)}
           />
-          <Evidence derived={hrv30} />
+          <Evidence derived={hrv.latest} />
         </Card>
       </div>
 
-      {/* sleep_score is resolved into daily_metrics and had no reader, so a
-          score entered on the sleep form below went nowhere it could be seen. */}
+      {/* The 30-day averages sit beside the latest readings rather than
+          replacing them. Each answers a different question, and the average
+          declines to answer at all until the window is half full. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card title="Sleep score (last night)">
-          <Figure
-            value={
-              todayRow?.sleepScore == null ? null : formatNumber(todayRow.sleepScore, 0)
-            }
-            unit="/100"
+        <Card title="Resting HR (30-day)">
+          <DerivedFigure
+            derived={restingHeartRate.average30}
+            format={whole}
+            unit="bpm"
             size="sm"
           />
+          <Evidence derived={restingHeartRate.average30} />
+        </Card>
+        <Card title="HRV (30-day)">
+          <DerivedFigure derived={hrv.average30} format={whole} unit="ms" size="sm" />
+          <Evidence derived={hrv.average30} />
+        </Card>
+        <Card title="Sleep score">
+          <DerivedFigure
+            derived={sleepScore.latest}
+            format={whole}
+            unit="/100"
+            size="sm"
+            sub={measuredOn(sleepScore.latest)}
+          />
+          <Evidence derived={sleepScore.latest} />
         </Card>
         <Card title="Sleep score (30-day)">
-          <Figure
-            value={sleepScore30.value === null ? null : formatNumber(sleepScore30.value, 0)}
+          <DerivedFigure
+            derived={sleepScore.average30}
+            format={whole}
             unit="/100"
             size="sm"
           />
-          <Evidence derived={sleepScore30} />
+          <Evidence derived={sleepScore.average30} />
+        </Card>
+      </div>
+
+      {/* total_calories_burned has been resolved into daily_metrics since 0005
+          and written by two forms, and was read by no page at all - the same
+          "saved but invisible" fault as resting heart rate, but total. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card title="Total calories burned">
+          <DerivedFigure
+            derived={totalCaloriesBurned.latest}
+            format={whole}
+            unit="kcal"
+            size="sm"
+            sub={measuredOn(totalCaloriesBurned.latest)}
+          />
+          <Evidence derived={totalCaloriesBurned.latest} />
+        </Card>
+        <Card title="Total calories burned (30-day)">
+          <DerivedFigure
+            derived={totalCaloriesBurned.average30}
+            format={whole}
+            unit="kcal"
+            size="sm"
+          />
+          <Evidence derived={totalCaloriesBurned.average30} />
         </Card>
       </div>
 
       <Card title="Sleep, last 30 days">
         <BarSeries
-          data={densify(sleep, addDays(end, -29), end)}
+          data={densify(recovery.sleepSeries, chartStart, end)}
           unit="min"
           label="asleep"
           height={200}
         />
       </Card>
 
+      {/* Charts of the daily values on their own dates. A gated average can
+          refuse to summarise a sparse month; the days themselves are still
+          measurements and belong on screen. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Resting heart rate, last 30 days">
+          <BarSeries
+            data={densify(restingHeartRate.series, chartStart, end)}
+            unit="bpm"
+            label="resting HR"
+            height={200}
+          />
+        </Card>
+        <Card title="HRV, last 30 days">
+          <BarSeries
+            data={densify(hrv.series, chartStart, end)}
+            unit="ms"
+            label="HRV"
+            height={200}
+          />
+        </Card>
+      </div>
+
       <Card title="Steps, last 30 days">
         <BarSeries
-          data={densify(steps, addDays(end, -29), end)}
+          data={densify(recovery.stepsSeries, chartStart, end)}
           label="steps"
           height={200}
         />
@@ -154,12 +225,14 @@ export default async function RecoveryPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Cardio">
-          <Figure
+          <DerivedFigure
+            derived={recovery.zone2Minutes}
+            format={whole}
             label="Zone 2, last 28 days"
-            value={zone2 > 0 ? formatNumber(zone2, 0) : null}
             unit="min"
             size="sm"
           />
+          <Evidence derived={recovery.zone2Minutes} />
           {recentCardio.length > 0 && (
             <ul className="mt-4 divide-y divide-line/60 text-sm">
               {recentCardio.map((session) => (

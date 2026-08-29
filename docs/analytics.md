@@ -31,6 +31,33 @@ carry data.
 reason attached, rather than a "7-day average" computed from two days. Coverage
 also sets confidence: ≥85% HIGH, ≥70% MODERATE, otherwise LOW.
 
+**A refused average is not missing data.** The result also carries
+`observations`, the number of days that did hold a reading. Without it a gated
+figure is indistinguishable from one that was never recorded, and the UI says
+"not logged" about measurements the user definitely took. `DerivedFigure`
+renders the two differently, and `isInsufficientNotAbsent()` in `lib/types.ts`
+is the predicate:
+
+| `value` | `observations` | reads as |
+|---|---|---|
+| a number | any | the number |
+| `null` | `> 0` | "not enough data · 4 of 30 days" |
+| `null` | `0` or absent | "not logged" |
+
+## Latest reading
+
+The most recent day inside a trailing window that carries a value, with the
+date it came from and its age in days (`lib/analytics/latest.ts`).
+
+**No coverage gate**, deliberately. "What was last recorded?" is answerable
+from one observation, so a metric read only through a gated average vanishes
+from the app until half the window fills — which is what happened to resting
+heart rate and HRV. Confidence here is about staleness, not agreement:
+≤2 days HIGH, ≤7 days MODERATE, otherwise LOW. A measured `0` is a reading.
+
+Recovery metrics are reported **both** ways. The average says what is typical;
+the latest says what was last true. Neither substitutes for the other.
+
 ## Trend
 
 Ordinary least squares of value against day index over a trailing window.

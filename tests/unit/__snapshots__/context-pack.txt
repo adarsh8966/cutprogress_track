@@ -2,7 +2,7 @@
 FITNESS CONTEXT PACK
 ====================================================
 Generated: 2026-11-20
-Context version: 1.1
+Context version: 1.2
 Analytics version: 0.1.0
 
 PURPOSE:
@@ -125,6 +125,7 @@ TRAINING
 - Average session heart rate: 139 bpm
 - Peak session heart rate: 175 bpm
 - Calories burned in sessions (period): 8,294 kcal
+- Average training minutes per training day (30d): 41 min [confidence: high]
 - Training adherence: 100% [confidence: high]
 
 Sessions by type (period):
@@ -153,8 +154,12 @@ RECOVERY
 ----------------------------------------------------
 - 7-day average sleep: 7h 12m [confidence: high]
 - 30-day average sleep: 7h 20m [confidence: high]
+- Latest resting heart rate: 58 bpm [confidence: high]
 - 30-day average resting heart rate: 60 bpm [confidence: high]
+- Latest HRV: 66 ms [confidence: high]
 - 30-day average HRV: 59 ms [confidence: high]
+- Latest total calories burned: not computable (No measurement in the 30 days ending 2026-11-20.)
+- 30-day average total calories burned: not computable (No measurements in the 30 days ending 2026-11-20.)
 - Rest days (last 28): 8
   Note: recovery data is informational. Poor sleep alone is not a reason to skip training.
 
@@ -170,22 +175,22 @@ ADHERENCE
 
 RECENT DETAIL (LAST 14 DAYS)
 ----------------------------------------------------
-Date    Weight  kcal   P    C    F   Fib  Steps   Sleep   Sess
-------  ------  -----  ---  ---  --  ---  ------  ------  ----
-Nov 7   -       2,005  143  213  71  34   11,349  7h 41m  1
-Nov 8   186.0   2,072  151  202  55  33   9,859   7h 16m  0
-Nov 9   -       1,980  146  192  53  23   11,218  7h 21m  1
-Nov 10  185.9   1,888  144  182  73  31   10,228  6h 58m  1
-Nov 11  187.1   2,092  134  208  67  25   10,702  7h 57m  1
-Nov 12  186.8   -      -    -    -   -    9,721   7h 34m  0
-Nov 13  186.0   2,075  141  193  58  23   11,397  7h 9m   1
-Nov 14  185.2   2,065  137  181  58  23   11,748  7h 11m  1
-Nov 15  186.3   1,957  150  218  68  27   9,547   7h 29m  0
-Nov 16  185.7   1,923  137  233  54  35   11,356  6h 57m  1
-Nov 17  184.5   2,098  145  197  70  22   11,754  6h 50m  1
-Nov 18  184.5   2,014  151  234  65  29   9,678   7h 3m   1
-Nov 19  184.2   1,963  157  204  70  33   11,417  7h 13m  0
-Nov 20  184.3   1,895  147  221  58  33   9,969   7h 42m  1
+Date    Weight  kcal   P    C    F   Fib  Steps   Sleep   RHR  HRV  Sess
+------  ------  -----  ---  ---  --  ---  ------  ------  ---  ---  ----
+Nov 7   -       2,005  143  213  71  34   11,349  7h 41m  58   50   1
+Nov 8   186.0   2,072  151  202  55  33   9,859   7h 16m  56   65   0
+Nov 9   -       1,980  146  192  53  23   11,218  7h 21m  62   67   1
+Nov 10  185.9   1,888  144  182  73  31   10,228  6h 58m  60   63   1
+Nov 11  187.1   2,092  134  208  67  25   10,702  7h 57m  60   54   1
+Nov 12  186.8   -      -    -    -   -    9,721   7h 34m  57   68   0
+Nov 13  186.0   2,075  141  193  58  23   11,397  7h 9m   57   50   1
+Nov 14  185.2   2,065  137  181  58  23   11,748  7h 11m  61   67   1
+Nov 15  186.3   1,957  150  218  68  27   9,547   7h 29m  60   48   0
+Nov 16  185.7   1,923  137  233  54  35   11,356  6h 57m  57   62   1
+Nov 17  184.5   2,098  145  197  70  22   11,754  6h 50m  61   63   1
+Nov 18  184.5   2,014  151  234  65  29   9,678   7h 3m   61   68   1
+Nov 19  184.2   1,963  157  204  70  33   11,417  7h 13m  62   69   0
+Nov 20  184.3   1,895  147  221  58  33   9,969   7h 42m  58   66   1
   "-" means not logged. It does not mean zero.
 
 SUMMARY WINDOWS

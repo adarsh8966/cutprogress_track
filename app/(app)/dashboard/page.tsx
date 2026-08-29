@@ -12,7 +12,9 @@
 import Link from 'next/link';
 import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
-import { Card, Figure, Meter, StatusDot, formatNumber, type Status } from '@/components/ui/primitives';
+import {
+  Card, DerivedFigure, Figure, Meter, StatusDot, formatNumber, type Status,
+} from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
 import { trailingAverage } from '@/lib/analytics/movingAverage';
 import { trend } from '@/lib/analytics/trend';
@@ -211,10 +213,9 @@ export default async function DashboardPage() {
         </Card>
 
         <Card title="Data quality">
-          <Figure
-            value={
-              dataQuality.value ? formatNumber(dataQuality.value.score, 0) : null
-            }
+          <DerivedFigure
+            derived={dataQuality}
+            format={(q) => formatNumber(q.score, 0)}
             unit="/100"
             sub={
               dataQuality.value ? (
@@ -275,12 +276,9 @@ export default async function DashboardPage() {
         </Card>
 
         <Card title="Training">
-          <Figure
-            value={
-              adherence.training.value === null
-                ? null
-                : formatNumber(adherence.training.value * 100, 0)
-            }
+          <DerivedFigure
+            derived={adherence.training}
+            format={(v) => formatNumber(v * 100, 0)}
             unit="%"
             sub={<span className="text-ink-faint">adherence, last 28 days</span>}
           />

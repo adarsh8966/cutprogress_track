@@ -8,6 +8,7 @@ import { getProfile, getSystemEvents } from '@/lib/data/queries';
 import { signOut } from '@/app/actions/auth';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { SettingsForm } from '@/components/dashboard/SettingsForm';
+import { RebuildCanonical } from '@/components/dashboard/RebuildCanonical';
 import { Card } from '@/components/ui/primitives';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,10 @@ export default async function SettingsPage() {
 
       <Card>
         <SettingsForm profile={profile ?? DEFAULT_PROFILE} />
+      </Card>
+
+      <Card title="Maintenance">
+        <RebuildCanonical />
       </Card>
 
       <Card title="Audit log">

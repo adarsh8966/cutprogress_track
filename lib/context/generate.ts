@@ -39,11 +39,18 @@ import {
 import {
   addDays, daysBetween, formatMonth, formatShortDate, monthKey,
 } from '@/lib/normalization/dates';
-import { latestPresent, mean, presentValues, roundTo, trailingWindow } from '@/lib/analytics/series';
+import {
+  latestPresent, mean, pickMetric, presentValues, roundTo, trailingWindow,
+} from '@/lib/analytics/series';
+import { latestReading } from '@/lib/analytics/latest';
 
 // 1.1 splits Training into session-level and exercise-level blocks, so a
 // summary-imported session is reported instead of silently omitted.
-export const CONTEXT_VERSION = '1.1';
+// 1.2 reports resting heart rate and HRV as latest readings and as per-day
+// columns, not only as 30-day averages. Under the coverage gate those averages
+// decline to compute on a sparse month, which meant a recovery metric could be
+// recorded every day for a week and reach ChatGPT as nothing at all.
+export const CONTEXT_VERSION = '1.2';
 
 /** Spec §31's compression windows. */
 export const DETAIL_DAYS = 14;
@@ -88,11 +95,9 @@ export interface ContextPack {
   parameters: Record<string, unknown>;
 }
 
+/** Delegates to the shared primitive so this file cannot drift from the pages. */
 function pick(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
-  return days.map((day) => {
-    const value = day[key];
-    return { date: day.localDate, value: typeof value === 'number' ? value : null };
-  });
+  return pickMetric(days, key);
 }
 
 /** Renders a Derived value as "value (confidence)" plus its caveats. */
@@ -123,6 +128,7 @@ export function generateContextPack(input: ContextInput): ContextPack {
   const sleep = pick(days, 'sleepDurationMinutes');
   const rhr = pick(days, 'restingHeartRate');
   const hrv = pick(days, 'hrvMs');
+  const totalBurned = pick(days, 'totalCaloriesBurned');
   const cardioMinutes = pick(days, 'cardioMinutes');
   const zone2 = pick(days, 'zone2Minutes');
   const sessions = pick(days, 'trainingSessions');
@@ -390,6 +396,16 @@ export function generateContextPack(input: ContextInput): ContextPack {
         line('Average session heart rate', sessionValue.averageHeartRate, 'bpm'),
         line('Peak session heart rate', sessionValue.maxHeartRate, 'bpm'),
         line('Calories burned in sessions (period)', sessionValue.totalCalories, 'kcal'),
+        // daily_metrics.workout_minutes has summed each day's completed
+        // sessions since 0005 and was read by nothing at all - stored,
+        // resolved and unreachable, the same fault as resting heart rate.
+        // A day with no session resolves to null, so this averages minutes
+        // across days that HELD training, not across the calendar.
+        derivedLine(
+          'Average training minutes per training day (30d)',
+          trailingAverage(pick(days, 'workoutMinutes'), end, 30, { minCoverage: 0 }),
+          (v) => `${formatNumber(v, 0)} min`,
+        ),
         derivedLine('Training adherence', adherence.training, (v) => percent(v)),
       ].join('\n'),
     );
@@ -463,8 +479,16 @@ export function generateContextPack(input: ContextInput): ContextPack {
     [
       derivedLine('7-day average sleep', trailingAverage(sleep, end, 7), formatSleep),
       derivedLine('30-day average sleep', trailingAverage(sleep, end, 30), formatSleep),
+      // Latest AND average. The average is gated on coverage and will refuse a
+      // sparse month; the latest reading answers "what was last recorded",
+      // which one observation can answer. Reporting only the average is how a
+      // week of logged recovery data reached ChatGPT as "not computable".
+      derivedLine('Latest resting heart rate', latestReading(rhr, end, 30), (v) => `${formatNumber(v, 0)} bpm`),
       derivedLine('30-day average resting heart rate', trailingAverage(rhr, end, 30), (v) => `${formatNumber(v, 0)} bpm`),
+      derivedLine('Latest HRV', latestReading(hrv, end, 30), (v) => `${formatNumber(v, 0)} ms`),
       derivedLine('30-day average HRV', trailingAverage(hrv, end, 30), (v) => `${formatNumber(v, 0)} ms`),
+      derivedLine('Latest total calories burned', latestReading(totalBurned, end, 30), (v) => `${formatNumber(v, 0)} kcal`),
+      derivedLine('30-day average total calories burned', trailingAverage(totalBurned, end, 30), (v) => `${formatNumber(v, 0)} kcal`),
       line(
         'Rest days (last 28)',
         trailingWindow(sessions, end, 28).filter((p) => p.value === 0).length,
@@ -497,13 +521,17 @@ export function generateContextPack(input: ContextInput): ContextPack {
   });
   parts.push(
     table(
-      ['Date', 'Weight', 'kcal', 'P', 'C', 'F', 'Fib', 'Steps', 'Sleep', 'Sess'],
+      ['Date', 'Weight', 'kcal', 'P', 'C', 'F', 'Fib', 'Steps', 'Sleep', 'RHR', 'HRV', 'Sess'],
       detailDays.map((d) => [
         formatShortDate(d.localDate),
         d.weightKg === null ? null : formatNumber(kgToLb(d.weightKg), 1),
         d.caloriesConsumed, d.proteinG, d.carbsG, d.fatG, d.fiberG,
         d.steps,
         d.sleepDurationMinutes === null ? null : formatSleep(d.sleepDurationMinutes),
+        // Per-day, on the day they were measured. The averages above are
+        // summaries; these are the observations themselves.
+        d.restingHeartRate,
+        d.hrvMs,
         d.trainingSessions,
       ]),
     ),

@@ -12,7 +12,7 @@
  */
 import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
-import { Card, Figure, formatNumber } from '@/components/ui/primitives';
+import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
 import { TrendChart } from '@/components/charts/TrendChart';
 import { BarSeries } from '@/components/charts/BarSeries';
@@ -87,20 +87,20 @@ export default async function ProgressPage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">
+        {/* DerivedFigure, not Figure: a figure the coverage gate declined to
+            compute must not report itself as never measured. */}
         <Card title="7-day average">
-          <Figure
-            value={weightAvg.value === null ? null : formatNumber(kgToLb(weightAvg.value), 1)}
+          <DerivedFigure
+            derived={weightAvg}
+            format={(kg) => formatNumber(kgToLb(kg), 1)}
             unit="lb"
           />
           <Evidence derived={weightAvg} />
         </Card>
         <Card title="Rate of change">
-          <Figure
-            value={
-              weightTrend.value === null
-                ? null
-                : formatNumber(kgToLb(weightTrend.value.perWeek), 2)
-            }
+          <DerivedFigure
+            derived={weightTrend}
+            format={(t) => formatNumber(kgToLb(t.perWeek), 2)}
             unit="lb/wk"
             sub={
               direction.value ? (
@@ -113,12 +113,9 @@ export default async function ProgressPage() {
           <Evidence derived={weightTrend} />
         </Card>
         <Card title="Waist rate">
-          <Figure
-            value={
-              waistTrend.value === null
-                ? null
-                : formatNumber(cmToInches(waistTrend.value.perWeek), 2)
-            }
+          <DerivedFigure
+            derived={waistTrend}
+            format={(t) => formatNumber(cmToInches(t.perWeek), 2)}
             unit="in/wk"
           />
           <Evidence derived={waistTrend} />

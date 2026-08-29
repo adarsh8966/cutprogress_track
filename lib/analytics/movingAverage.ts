@@ -44,11 +44,15 @@ export function trailingAverage(
     minCoverage,
   };
 
+  // Both branches report how many days DID carry data. Without that count the
+  // two nulls below are indistinguishable downstream, and a window holding four
+  // real readings gets displayed as "not logged" - see isInsufficientNotAbsent.
   if (values.length === 0) {
     return insufficient<number>(
       label,
       inputs,
       `No measurements in the ${windowDays} days ending ${end}.`,
+      0,
     );
   }
 
@@ -60,6 +64,7 @@ export function trailingAverage(
         `(${Math.round(coverage.ratio * 100)}%), below the ${Math.round(
           minCoverage * 100,
         )}% needed to report a ${windowDays}-day average.`,
+      coverage.present,
     );
   }
 
@@ -76,6 +81,7 @@ export function trailingAverage(
     coverage.ratio < 0.85
       ? [`Based on ${coverage.present} of ${windowDays} days.`]
       : [],
+    coverage.present,
   );
 }
 
