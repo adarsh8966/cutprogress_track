@@ -33,6 +33,7 @@ import {
   dayRow, sessionFieldRow, dayPath, sessionPath, sessionTypePath,
   editsFromPreview, buildConfirmPayload, summariseWrites,
   storableFields, unstorableFields, emptyEdits,
+  type SessionDisposition,
   type DisplayUnits, type EditState,
 } from '@/lib/health/importPayload';
 import type {
@@ -113,6 +114,24 @@ export function ImportWorkbench({
 
   function setType(path: string, value: string) {
     setEdits((previous) => ({ ...previous, types: { ...previous.types, [path]: value } }));
+  }
+
+  /**
+   * What to do about a session already recorded on the target day.
+   *
+   * The screen used to warn that importing adds to what is already there and
+   * leave it at that, so the only way to correct a session was to import a
+   * second one and have the day total both. The choice is now explicit, and
+   * the "will be saved" line below reports whichever one is picked.
+   */
+  function setDisposition(path: string, value: SessionDisposition, supersedes: string | null) {
+    setEdits((previous) => ({
+      ...previous,
+      dispositions: { ...previous.dispositions, [path]: value },
+      supersedes: supersedes === null
+        ? Object.fromEntries(Object.entries(previous.supersedes).filter(([k]) => k !== path))
+        : { ...previous.supersedes, [path]: supersedes },
+    }));
   }
 
   function toggleRemoved(path: string) {
@@ -312,9 +331,10 @@ export function ImportWorkbench({
               {record.existingSessions > 0 && (
                 <p className="rounded border border-warn/40 bg-warn/5 px-3 py-2 text-xs text-warn">
                   {record.existingSessionsDate} already has {record.existingSessions} session
-                  {record.existingSessions === 1 ? '' : 's'} recorded. Importing adds to
-                  them rather than replacing them, and the day&rsquo;s training and cardio
-                  minutes are the total of all of them.
+                  {record.existingSessions === 1 ? '' : 's'} recorded. Each session below
+                  chooses whether to add to them, replace one of them, or leave the day
+                  as it is — a day&rsquo;s minutes are the total of the sessions on it, so
+                  re-importing a corrected session as a new one would count it twice.
                   {movedFrom(r) && (
                     <> That count is for {record.checkedDate}; this record is now dated{' '}
                     {edits.dates[r]}, which has not been checked.</>
@@ -434,6 +454,85 @@ export function ImportWorkbench({
                         This session will not be saved. The paste is still stored verbatim.
                       </p>
                     )}
+
+                    {(() => {
+                      const path = sessionTypePath(r, s);
+                      const candidates = record.existingSessionRows.filter(
+                        (existing) => existing.kind === session.kind,
+                      );
+                      if (removed || candidates.length === 0) return null;
+                      const disposition = edits.dispositions[path] ?? 'ADD';
+                      const chosen = edits.supersedes[path] ?? '';
+                      return (
+                        <div className="mb-3 rounded border border-line bg-ground px-3 py-2">
+                          <span className="mb-1.5 block text-[11px] uppercase tracking-[0.12em] text-ink-faint">
+                            This day already has {candidates.length}{' '}
+                            {session.kind === 'WORKOUT' ? 'workout' : 'cardio session'}
+                            {candidates.length === 1 ? '' : 's'}
+                          </span>
+                          <div className="flex flex-wrap gap-x-4 gap-y-2">
+                            {(['ADD', 'REPLACE', 'KEEP'] as const).map((mode) => (
+                              <label key={mode} className="flex items-center gap-1.5 text-xs">
+                                <input
+                                  type="radio"
+                                  name={`disposition-${path}`}
+                                  checked={disposition === mode}
+                                  onChange={() =>
+                                    setDisposition(
+                                      path,
+                                      mode,
+                                      mode === 'REPLACE'
+                                        ? chosen || candidates[0]!.id
+                                        : null,
+                                    )
+                                  }
+                                  className="accent-accent"
+                                />
+                                <span className={disposition === mode ? 'text-ink' : 'text-ink-muted'}>
+                                  {mode === 'ADD' && 'Add as another session'}
+                                  {mode === 'REPLACE' && 'Replace an existing one'}
+                                  {mode === 'KEEP' && 'Keep what is there, import nothing'}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+
+                          {disposition === 'REPLACE' && (
+                            <label className="mt-2 block">
+                              <span className="mb-1 block text-[11px] text-ink-faint">
+                                Replaces
+                              </span>
+                              <select
+                                value={chosen || candidates[0]!.id}
+                                onChange={(event) =>
+                                  setDisposition(path, 'REPLACE', event.target.value)
+                                }
+                                className="rounded border border-line bg-ground px-2 py-1 text-sm outline-none focus:border-accent"
+                              >
+                                {candidates.map((existing) => (
+                                  <option key={existing.id} value={existing.id}>
+                                    {existing.label.replaceAll('_', ' ').toLowerCase()}
+                                    {existing.durationMinutes === null
+                                      ? ' · duration not logged'
+                                      : ` · ${existing.durationMinutes} min`}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="mt-1 block max-w-md text-[11px] leading-snug text-ink-faint">
+                                The replaced session is kept on record and stops counting
+                                towards the day&rsquo;s totals. Nothing is deleted.
+                              </span>
+                            </label>
+                          )}
+
+                          {disposition === 'KEEP' && (
+                            <span className="mt-2 block text-[11px] leading-snug text-ink-faint">
+                              This session will not be saved. The paste is still stored verbatim.
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className={`flex flex-wrap items-end gap-4 ${removed ? 'hidden' : ''}`}>
                       <label className="block">

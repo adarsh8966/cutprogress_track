@@ -65,16 +65,21 @@ function fakeClient() {
       const error: FakeError | null = db.errors[table] ?? null;
       return {
         insert(payload: Record<string, unknown> | Record<string, unknown>[]) {
+          const rows = Array.isArray(payload) ? payload : [payload];
+          // One id per row, so `.insert(rows).select('id')` can hand back a row
+          // per insert the way PostgREST does - that is how a REPLACE finds the
+          // id of the session it just wrote in order to supersede the old one.
+          const ids = rows.map(() => ({ id: `id-${(db.nextId += 1)}` }));
           if (!error) {
-            const rows = Array.isArray(payload) ? payload : [payload];
             (db.inserted[table] ??= []).push(...rows);
           }
-          const result = {
-            data: error ? null : { id: `id-${(db.nextId += 1)}` },
-            error,
-          };
+          const single = { data: error ? null : ids[0] ?? null, error };
+          const many = { data: error ? null : ids, error };
           return {
-            select: () => ({ single: async () => result }),
+            select: () => ({
+              single: async () => single,
+              then: (resolve: (value: typeof many) => unknown) => resolve(many),
+            }),
             then: (resolve: (value: { data: null; error: FakeError | null }) => unknown) =>
               resolve({ data: null, error }),
           };
@@ -143,6 +148,9 @@ function session(overrides: Partial<Session> = {}): Session {
     rawLabel: 'Push',
     sessionMinutes: null, distanceKm: null, averageHeartRate: null,
     maxHeartRate: null, sessionCalories: null, hrZone: null,
+    // ADD is the default and what every existing case expects: write the
+    // session alongside anything already on the day.
+    disposition: 'ADD', supersedes: null,
     ...overrides,
   };
 }
@@ -241,6 +249,119 @@ describe('what the review screen promised is what gets written', () => {
       cardio_type: 'RUNNING', duration_minutes: 38, distance_km: 4.988,
       average_heart_rate: 152, max_heart_rate: 178, calories: 465,
       hr_zone: 3, notes: 'Running',
+    });
+  });
+
+  /**
+   * Corrected imports (spec §38).
+   *
+   * daily_metrics SUMS a day's sessions, so re-importing Aug 28 to fix a
+   * duration used to make the day 58 + 65 = 123 minutes: two true rows and one
+   * false total. The reviewer now chooses per session, and REPLACE records the
+   * correction as a NEW row that supersedes the old one - nothing is updated in
+   * place and nothing is deleted.
+   */
+  describe('corrected imports', () => {
+    it('ADD writes the session and supersedes nothing', async () => {
+      await confirmImport({
+        records: [record({
+          sessions: [session({ sessionMinutes: 65, disposition: 'ADD' })],
+        })],
+      });
+      expect(rowsFor('workout_sessions')).toHaveLength(1);
+      // health_imports is still flipped to CONFIRMED; no session is superseded.
+      expect(db.updated.filter((u) => u.table === 'workout_sessions')).toHaveLength(0);
+    });
+
+    it('REPLACE writes the new session and marks the old one superseded', async () => {
+      await confirmImport({
+        records: [record({
+          sessions: [session({
+            sessionMinutes: 65, disposition: 'REPLACE',
+            supersedes: '11111111-1111-4111-8111-111111111111',
+          })],
+        })],
+      });
+
+      // The correction is a new observation, exactly like every other one.
+      expect(rowsFor('workout_sessions')).toHaveLength(1);
+      expect(rowsFor('workout_sessions')[0]!.duration_minutes).toBe(65);
+
+      // And the row it replaces stops counting, without being touched otherwise.
+      const supersession = db.updated.find((u) => u.table === 'workout_sessions');
+      expect(supersession).toBeDefined();
+      expect(supersession!.values.superseded_by).toBeTruthy();
+      expect(supersession!.values.superseded_at).toBeTruthy();
+      // No measurement is rewritten by a supersession.
+      expect(Object.keys(supersession!.values).sort())
+        .toEqual(['superseded_at', 'superseded_by']);
+    });
+
+    it('KEEP writes nothing at all for that session', async () => {
+      await confirmImport({
+        records: [record({
+          steps: 12000,
+          sessions: [session({ sessionMinutes: 65, disposition: 'KEEP' })],
+        })],
+      });
+      expect(rowsFor('workout_sessions')).toHaveLength(0);
+      expect(db.updated.filter((u) => u.table === 'workout_sessions')).toHaveLength(0);
+      // The rest of the day still imports; KEEP is about that session only.
+      expect(rowsFor('metric_observations')).toHaveLength(1);
+    });
+
+    it('KEEP on cardio leaves the existing cardio session alone', async () => {
+      await confirmImport({
+        records: [record({
+          sessions: [session({
+            kind: 'CARDIO', cardioType: 'RUNNING', rawLabel: 'Run',
+            sessionMinutes: 30, disposition: 'KEEP',
+          })],
+        })],
+      });
+      expect(rowsFor('cardio_sessions')).toHaveLength(0);
+    });
+
+    it('REPLACE on cardio supersedes the row it names', async () => {
+      await confirmImport({
+        records: [record({
+          sessions: [session({
+            kind: 'CARDIO', cardioType: 'RUNNING', rawLabel: 'Run',
+            sessionMinutes: 30, disposition: 'REPLACE',
+            supersedes: '22222222-2222-4222-8222-222222222222',
+          })],
+        })],
+      });
+      expect(rowsFor('cardio_sessions')).toHaveLength(1);
+      expect(db.updated.some((u) => u.table === 'cardio_sessions')).toBe(true);
+    });
+
+    it('refuses a REPLACE that does not name what it replaces', async () => {
+      const result = await confirmImport({
+        records: [record({
+          sessions: [session({ sessionMinutes: 65, disposition: 'REPLACE', supersedes: null })],
+        })],
+      });
+      expect(result.ok).toBe(false);
+      expect(rowsFor('workout_sessions')).toHaveLength(0);
+    });
+
+    it('replaces only the session it was told to, on a day with several', async () => {
+      await confirmImport({
+        records: [record({
+          sessions: [
+            session({ sessionType: 'PUSH', rawLabel: 'Push', sessionMinutes: 45 }),
+            session({
+              sessionType: 'PULL', rawLabel: 'Pull', sessionMinutes: 65,
+              disposition: 'REPLACE',
+              supersedes: '33333333-3333-4333-8333-333333333333',
+            }),
+          ],
+        })],
+      });
+      expect(rowsFor('workout_sessions')).toHaveLength(2);
+      const updates = db.updated.filter((u) => u.table === 'workout_sessions');
+      expect(updates).toHaveLength(1);
     });
   });
 

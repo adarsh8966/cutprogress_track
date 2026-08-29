@@ -15,15 +15,26 @@ const SESSION_TYPES = [
   'UPPER', 'LOWER', 'PUSH', 'PULL', 'LEGS', 'FULL_BODY', 'CARDIO', 'OTHER',
 ].map((value) => ({ value, label: value.replaceAll('_', ' ').toLowerCase() }));
 
+/**
+ * `existingSessionId` attaches sets to a session that already exists instead of
+ * starting a new one. That is what lets an imported summary - a session row
+ * with no exercises - be filled in later, rather than forcing a second session
+ * row for the same workout. Manual and imported sessions are the same record
+ * either way; only how they started differs.
+ */
 export function WorkoutLogger({
   today,
   exercises,
+  existingSessionId,
+  initialSetNumber = 1,
 }: {
   today: string;
   exercises: Exercise[];
+  existingSessionId?: string;
+  initialSetNumber?: number;
 }) {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [setNumber, setSetNumber] = useState(1);
+  const [sessionId, setSessionId] = useState<string | null>(existingSessionId ?? null);
+  const [setNumber, setSetNumber] = useState(initialSetNumber);
   const [logged, setLogged] = useState<
     { exercise: string; weight: string; reps: string }[]
   >([]);
@@ -91,7 +102,7 @@ export function WorkoutLogger({
             <select
               name="exerciseId"
               required
-              className="w-full rounded border border-line bg-ground px-3 py-2 text-sm outline-none focus:border-accent"
+              className="w-full min-h-11 rounded border border-line bg-ground px-3 py-2 text-base outline-none focus:border-accent sm:text-sm"
             >
               {exercises.map((exercise) => (
                 <option key={exercise.exerciseId} value={exercise.exerciseId}>
@@ -114,21 +125,23 @@ export function WorkoutLogger({
           <button
             type="submit"
             disabled={pending}
-            className="rounded border border-line-strong px-4 py-1.5 text-sm transition-colors hover:border-accent disabled:opacity-40"
+            className="min-h-11 rounded border border-line-strong px-5 text-sm transition-colors hover:border-accent disabled:opacity-40"
           >
             {pending ? 'Logging…' : 'Log set'}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSessionId(null);
-              setSetNumber(1);
-              setLogged([]);
-            }}
-            className="text-xs text-ink-faint hover:text-ink-muted"
-          >
-            End session
-          </button>
+          {existingSessionId === undefined && (
+            <button
+              type="button"
+              onClick={() => {
+                setSessionId(null);
+                setSetNumber(1);
+                setLogged([]);
+              }}
+              className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-ink-muted"
+            >
+              End session
+            </button>
+          )}
           {message && <span className="text-xs text-ink-muted">{message}</span>}
         </div>
       </form>

@@ -143,6 +143,9 @@ export type CardioSessionRow = {
   notes: string | null;
   source: DataSourceEnum;
   import_id: string | null;
+  /** Set when a corrected import replaced this row. NULL means live (0011). */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type ExerciseRow = {
@@ -175,6 +178,9 @@ export type WorkoutSessionRow = {
   completed: boolean;
   source: DataSourceEnum;
   import_id: string | null;
+  /** Set when a corrected import replaced this row. NULL means live (0011). */
+  superseded_at: string | null;
+  superseded_by: string | null;
 }
 
 export type WorkoutSetRow = {
@@ -217,6 +223,7 @@ export type DailyMetricsRow = {
   carbs_g: number | null;
   fat_g: number | null;
   fiber_g: number | null;
+  fruit_veg_servings: number | null;
   training_sessions: number | null;
   provenance: Record<string, unknown>;
 }
@@ -298,6 +305,13 @@ type Insertable<T, Defaulted extends keyof T> = Omit<T, Defaulted> &
 
 type ServerDefaults = 'id' | 'created_at' | 'updated_at';
 
+/**
+ * A session is always inserted live. Marking a row superseded is a later,
+ * separate write (migration 0011), so these columns are not part of an insert
+ * and an "already superseded" row cannot be created in the first place.
+ */
+type SessionDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
+
 type TableDef<Row, Insert = Row, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -323,11 +337,11 @@ export type Database = {
         SleepRecordRow, Insertable<SleepRecordRow, 'id' | 'created_at'>
       >;
       cardio_sessions: TableDef<
-        CardioSessionRow, Insertable<CardioSessionRow, 'id' | 'created_at'>
+        CardioSessionRow, Insertable<CardioSessionRow, SessionDefaults>
       >;
       exercises: TableDef<ExerciseRow, Insertable<ExerciseRow, 'created_at' | 'updated_at'>>;
       workout_sessions: TableDef<
-        WorkoutSessionRow, Insertable<WorkoutSessionRow, 'id' | 'created_at'>
+        WorkoutSessionRow, Insertable<WorkoutSessionRow, SessionDefaults>
       >;
       workout_sets: TableDef<WorkoutSetRow, Insertable<WorkoutSetRow, 'id' | 'created_at'>>;
       daily_metrics: TableDef<DailyMetricsRow, Insertable<DailyMetricsRow, ServerDefaults>>;

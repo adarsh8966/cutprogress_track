@@ -10,7 +10,7 @@
  * the assertions can be about known values.
  */
 import type { DailyMetrics, UserProfile } from '@/lib/types';
-import type { LoggedSet } from '@/lib/analytics/training';
+import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { addDays, dateRange } from '@/lib/normalization/dates';
 import { feetInchesToCm, lbToKg } from '@/lib/normalization/units';
 
@@ -88,6 +88,7 @@ export function fixtureDays(): DailyMetrics[] {
       carbsG: loggedNutrition ? Math.round(180 + random() * 60) : null,
       fatG: loggedNutrition ? Math.round(52 + random() * 22) : null,
       fiberG: loggedNutrition ? Math.round(22 + random() * 14) : null,
+      fruitVegServings: loggedNutrition ? Math.round(2 + random() * 4) : null,
       trainingSessions: isRestDay ? 0 : 1,
     };
   });
@@ -127,6 +128,41 @@ export function fixtureSets(): LoggedSet[] {
   });
 
   return sets;
+}
+
+/**
+ * Sessions matching fixtureSets(), so the fixture describes one coherent user:
+ * the same session ids the sets hang off, with the session-level figures a
+ * tracker reports.
+ *
+ * The last two sessions deliberately carry NO sets. That is the imported-summary
+ * case - a session that is entirely real and has no exercise detail - and having
+ * it in the shared fixture keeps every consumer honest about handling it.
+ */
+export function fixtureSessions(): TrainingSession[] {
+  const random = seeded(4471);
+  const dates = dateRange(addDays(FIXTURE_END, -27), FIXTURE_END);
+  const types = ['PULL', 'PUSH', 'LEGS', 'UPPER'];
+
+  return dates
+    .filter((_, dayIndex) => dayIndex % 7 !== 2 && dayIndex % 7 !== 6)
+    .map((date, i) => {
+      // The fixture runs to 20 sessions; the last two are summary-only.
+      const summaryOnly = i >= 18;
+      return {
+        id: summaryOnly ? `imported-${date}` : `session-${date}`,
+        date,
+        sessionType: types[i % types.length]!,
+        durationMinutes: 55 + Math.round(random() * 12),
+        averageHeartRate: 132 + Math.round(random() * 14),
+        maxHeartRate: 165 + Math.round(random() * 10),
+        calories: 380 + Math.round(random() * 60),
+        notes: null,
+        source: summaryOnly ? 'IMPORT_TEXT' : 'MANUAL',
+        completed: true,
+        importId: null,
+      };
+    });
 }
 
 export function fixtureCardio() {

@@ -429,12 +429,36 @@ describe('imports respect row-level security (spec §34, §48)', () => {
   });
 
   it('never lets an imported cardio session be edited', async () => {
-    await withUser(db, alice, (tx) =>
-      tx.query(`update cardio_sessions set duration_minutes = 999`),
-    );
+    // Since 0011 this is refused outright rather than silently ignored: the
+    // update privilege on cardio_sessions is granted per column and the
+    // measurement columns are not among them. An attempt to rewrite a
+    // measurement is now an error, which is the stronger guarantee.
+    await expect(
+      withUser(db, alice, (tx) =>
+        tx.query(`update cardio_sessions set duration_minutes = 999`),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
     const { rows } = await withUser(db, alice, (tx) =>
       tx.query<{ duration_minutes: string }>(`select duration_minutes from cardio_sessions`),
     );
+    expect(Number(rows[0]!.duration_minutes)).toBe(30);
+  });
+
+  it('does let an imported cardio session be marked superseded', async () => {
+    // The one write 0011 opens up: a corrected import records a NEW row and
+    // marks the one it replaces, so the day's total counts the correction
+    // instead of summing both. The original row is still there.
+    await withUser(db, alice, (tx) =>
+      tx.query(`update cardio_sessions set superseded_at = now()`),
+    );
+    const { rows } = await withUser(db, alice, (tx) =>
+      tx.query<{ duration_minutes: string; superseded_at: string | null }>(
+        `select duration_minutes, superseded_at from cardio_sessions`,
+      ),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.superseded_at).not.toBeNull();
     expect(Number(rows[0]!.duration_minutes)).toBe(30);
   });
 

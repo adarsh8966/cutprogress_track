@@ -36,7 +36,7 @@ export function Evidence<T>({ derived }: { derived: Derived<T> }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="text-[11px] text-ink-faint hover:text-accent transition-colors"
+        className="inline-flex min-h-11 items-center text-[11px] text-ink-faint hover:text-accent transition-colors sm:min-h-0"
         aria-expanded={open}
       >
         {open ? 'Hide working' : 'Why?'}

@@ -45,6 +45,10 @@ export default async function RecoveryPage() {
   const sleep30 = trailingAverage(sleep, end, 30, { label: 'Sleep 30-day average' });
   const rhr30 = trailingAverage(rhr, end, 30, { label: 'Resting HR 30-day average' });
   const hrv30 = trailingAverage(hrv, end, 30, { label: 'HRV 30-day average' });
+  const sleepScore30 = trailingAverage(
+    pick(metrics, 'sleepScore'), end, 30, { label: 'Sleep score 30-day average' },
+  );
+  const todayRow = metrics.find((day) => day.localDate === end) ?? null;
 
   const recentCardio = cardio.slice(0, 12);
   const zone2 = presentValues(
@@ -109,6 +113,28 @@ export default async function RecoveryPage() {
         </Card>
       </div>
 
+      {/* sleep_score is resolved into daily_metrics and had no reader, so a
+          score entered on the sleep form below went nowhere it could be seen. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card title="Sleep score (last night)">
+          <Figure
+            value={
+              todayRow?.sleepScore == null ? null : formatNumber(todayRow.sleepScore, 0)
+            }
+            unit="/100"
+            size="sm"
+          />
+        </Card>
+        <Card title="Sleep score (30-day)">
+          <Figure
+            value={sleepScore30.value === null ? null : formatNumber(sleepScore30.value, 0)}
+            unit="/100"
+            size="sm"
+          />
+          <Evidence derived={sleepScore30} />
+        </Card>
+      </div>
+
       <Card title="Sleep, last 30 days">
         <BarSeries
           data={densify(sleep, addDays(end, -29), end)}
@@ -137,16 +163,43 @@ export default async function RecoveryPage() {
           {recentCardio.length > 0 && (
             <ul className="mt-4 divide-y divide-line/60 text-sm">
               {recentCardio.map((session) => (
-                <li key={session.id} className="flex flex-wrap items-baseline gap-x-3 py-2">
-                  <span className="tabular text-ink-muted">{session.date}</span>
-                  <span className="text-xs text-ink-faint">
-                    {session.type.replaceAll('_', ' ').toLowerCase()}
-                  </span>
-                  <span className="tabular ml-auto">
-                    {formatNumber(session.durationMinutes, 0)} min
-                    {session.distanceKm !== null &&
-                      ` · ${formatNumber(kmToMiles(session.distanceKm), 2)} mi`}
-                  </span>
+                <li key={session.id} className="py-2">
+                  <div className="flex flex-wrap items-baseline gap-x-3">
+                    <span className="tabular text-ink-muted">{session.date}</span>
+                    <span className="text-xs text-ink-faint">
+                      {session.type.replaceAll('_', ' ').toLowerCase()}
+                    </span>
+                    <span className="tabular ml-auto">
+                      {formatNumber(session.durationMinutes, 0)} min
+                      {session.distanceKm !== null &&
+                        ` · ${formatNumber(kmToMiles(session.distanceKm), 2)} mi`}
+                    </span>
+                  </div>
+                  {/* Heart rates, energy and zone are stored on every cardio
+                      row and were previously read by nothing at all. */}
+                  {(session.averageHeartRate !== null ||
+                    session.maxHeartRate !== null ||
+                    session.calories !== null ||
+                    session.hrZone !== null) && (
+                    <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs text-ink-faint">
+                      {session.averageHeartRate !== null && (
+                        <span className="tabular">
+                          avg {formatNumber(session.averageHeartRate, 0)} bpm
+                        </span>
+                      )}
+                      {session.maxHeartRate !== null && (
+                        <span className="tabular">
+                          max {formatNumber(session.maxHeartRate, 0)} bpm
+                        </span>
+                      )}
+                      {session.calories !== null && (
+                        <span className="tabular">
+                          {formatNumber(session.calories, 0)} kcal
+                        </span>
+                      )}
+                      {session.hrZone !== null && <span>zone {session.hrZone}</span>}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

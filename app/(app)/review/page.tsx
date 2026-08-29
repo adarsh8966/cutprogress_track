@@ -97,11 +97,13 @@ export default async function ReviewPage() {
             label="Training"
             value={formatNumber(w.trainingSessions)}
             sub={
-              profile.targets.trainingSessionsPerWeek !== null ? (
-                <span className="text-ink-faint">
-                  of {profile.targets.trainingSessionsPerWeek} planned
-                </span>
-              ) : null
+              <span className="text-ink-faint">
+                {profile.targets.trainingSessionsPerWeek !== null &&
+                  `of ${profile.targets.trainingSessionsPerWeek} planned · `}
+                {w.workingSets === 0
+                  ? 'no sets logged'
+                  : `${formatNumber(w.workingSets)} working sets`}
+              </span>
             }
             size="sm"
           />
@@ -211,6 +213,13 @@ export default async function ReviewPage() {
           <Figure
             label="Training sessions"
             value={formatNumber(m.trainingSessions)}
+            sub={
+              <span className="text-ink-faint">
+                {m.workingSets === 0
+                  ? 'no sets logged'
+                  : `${formatNumber(m.workingSets)} working sets`}
+              </span>
+            }
             size="sm"
           />
           <Figure

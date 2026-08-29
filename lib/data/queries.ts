@@ -10,7 +10,7 @@ import 'server-only';
  * about.
  */
 import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
-import type { LoggedSet } from '@/lib/analytics/training';
+import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { createServerComponentClient } from '@/lib/supabase/server';
 import { addDays, localToday } from '@/lib/normalization/dates';
 import type { ContextExportRow, ProfileRow, SystemEventRow } from '@/lib/supabase/types';
@@ -87,6 +87,7 @@ export async function getDailyMetrics(
     carbsG: toNumber(row.carbs_g),
     fatG: toNumber(row.fat_g),
     fiberG: toNumber(row.fiber_g),
+    fruitVegServings: toNumber(row.fruit_veg_servings),
     trainingSessions: toNumber(row.training_sessions),
   }));
 }
@@ -103,22 +104,26 @@ export async function getLoggedSets(from: LocalDate, to: LocalDate): Promise<Log
     .lte('workout_sessions.local_date', to);
 
   if (error || !data) return [];
+  return mapLoggedSets(data);
+}
 
-  type Joined = {
-    session_id: string;
-    exercise_id: string;
-    weight_kg: number | null;
-    reps: number | null;
-    rir: number | null;
-    rpe: number | null;
-    warmup: boolean;
-    workout_sessions: { local_date: string } | { local_date: string }[];
-    exercises:
-      | { name: string; primary_muscle_group: string }
-      | { name: string; primary_muscle_group: string }[];
-  };
+type JoinedSet = {
+  session_id: string;
+  exercise_id: string;
+  weight_kg: number | null;
+  reps: number | null;
+  rir: number | null;
+  rpe: number | null;
+  warmup: boolean;
+  workout_sessions: { local_date: string } | { local_date: string }[];
+  exercises:
+    | { name: string; primary_muscle_group: string }
+    | { name: string; primary_muscle_group: string }[];
+};
 
-  return (data as unknown as Joined[]).map((row) => {
+/** PostgREST returns an embedded row as an object or a one-element array. */
+function mapLoggedSets(data: unknown): LoggedSet[] {
+  return (data as JoinedSet[]).map((row) => {
     const session = Array.isArray(row.workout_sessions)
       ? row.workout_sessions[0]!
       : row.workout_sessions;
@@ -138,11 +143,36 @@ export async function getLoggedSets(from: LocalDate, to: LocalDate): Promise<Log
   });
 }
 
-export async function getCardioSessions(from: LocalDate, to: LocalDate) {
+/**
+ * Training sessions as they were recorded, one object per `workout_sessions`
+ * row.
+ *
+ * This exists because the Training page used to have no way to see a session
+ * at all. Its only training query was getLoggedSets() below, which reads
+ * `workout_sets` and joins UP to the session - so a session with no set
+ * children produced no rows, and a summary-level import ("Pull, 58 min, avg HR
+ * 142") was invisible on the one page named after it while being counted
+ * everywhere else.
+ *
+ * The shape is deliberately the same as getCardioSessions(): a flat read of
+ * the table the importer actually writes, with no join to a child table, so
+ * the row's own existence is enough to make it visible. Session-level and
+ * exercise-level training are two different measurements and this is the
+ * session-level one; nothing here infers an exercise, a set or a volume.
+ *
+ * Superseded rows are excluded. A corrected import records a new row and marks
+ * the old one (migration 0011), so the live row is the current truth and the
+ * replaced one stays on disk for history.
+ */
+export async function getWorkoutSessions(
+  from: LocalDate,
+  to: LocalDate,
+): Promise<TrainingSession[]> {
   const supabase = await createServerComponentClient();
   const { data, error } = await supabase
-    .from('cardio_sessions')
+    .from('workout_sessions')
     .select('*')
+    .is('superseded_at', null)
     .gte('local_date', from)
     .lte('local_date', to)
     .order('local_date', { ascending: false });
@@ -151,11 +181,85 @@ export async function getCardioSessions(from: LocalDate, to: LocalDate) {
   return data.map((row) => ({
     id: row.id,
     date: row.local_date,
+    sessionType: row.session_type as string,
+    durationMinutes: toNumber(row.duration_minutes),
+    averageHeartRate: toNumber(row.average_heart_rate),
+    maxHeartRate: toNumber(row.max_heart_rate),
+    calories: toNumber(row.calories),
+    notes: row.notes,
+    source: row.source as string,
+    completed: row.completed,
+    importId: row.import_id,
+  }));
+}
+
+/** One session by id, for the detail page. Null when it is not the user's. */
+export async function getWorkoutSession(id: string): Promise<TrainingSession | null> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    date: data.local_date,
+    sessionType: data.session_type as string,
+    durationMinutes: toNumber(data.duration_minutes),
+    averageHeartRate: toNumber(data.average_heart_rate),
+    maxHeartRate: toNumber(data.max_heart_rate),
+    calories: toNumber(data.calories),
+    notes: data.notes,
+    source: data.source as string,
+    completed: data.completed,
+    importId: data.import_id,
+  };
+}
+
+/** Every set belonging to one session, for the detail page. */
+export async function getSetsForSession(sessionId: string): Promise<LoggedSet[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('workout_sets')
+    .select(
+      'id, set_number, weight_kg, reps, rir, rpe, warmup, session_id, exercise_id, ' +
+        'workout_sessions!inner(local_date), exercises!inner(name, primary_muscle_group)',
+    )
+    .eq('session_id', sessionId)
+    .order('set_number', { ascending: true });
+
+  if (error || !data) return [];
+  return mapLoggedSets(data);
+}
+
+export async function getCardioSessions(from: LocalDate, to: LocalDate) {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('cardio_sessions')
+    .select('*')
+    .is('superseded_at', null)
+    .gte('local_date', from)
+    .lte('local_date', to)
+    .order('local_date', { ascending: false });
+
+  if (error || !data) return [];
+  // max_heart_rate and calories were selected but never mapped, so a cardio
+  // session's peak HR and energy were stored by the importer and unreachable
+  // by every page. They are part of the row like any other column.
+  return data.map((row) => ({
+    id: row.id,
+    date: row.local_date,
     type: row.cardio_type as string,
     durationMinutes: toNumber(row.duration_minutes) ?? 0,
     distanceKm: toNumber(row.distance_km),
     hrZone: toNumber(row.hr_zone),
     averageHeartRate: toNumber(row.average_heart_rate),
+    maxHeartRate: toNumber(row.max_heart_rate),
+    calories: toNumber(row.calories),
+    notes: row.notes,
+    source: row.source as string,
   }));
 }
 
@@ -199,13 +303,16 @@ export async function getAnalyticsWindow(days = 400) {
   const end = localToday(timezone);
   const start = addDays(end, -(days - 1));
 
-  const [metrics, sets, cardio] = await Promise.all([
+  const [metrics, sets, sessions, cardio] = await Promise.all([
     getDailyMetrics(start, end),
     // Training analytics only look back 90 days; pulling 400 days of sets would
     // be a lot of rows for no gain.
     getLoggedSets(addDays(end, -89), end),
+    // Sessions are read on the same window as the sets, and separately from
+    // them: a session exists whether or not anything was logged inside it.
+    getWorkoutSessions(addDays(end, -89), end),
     getCardioSessions(addDays(end, -89), end),
   ]);
 
-  return { profile, end, start, metrics, sets, cardio };
+  return { profile, end, start, metrics, sets, sessions, cardio };
 }

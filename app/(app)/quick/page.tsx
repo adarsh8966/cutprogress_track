@@ -1,0 +1,46 @@
+/**
+ * Quick Entry (spec §6, §8).
+ *
+ * The manual counterpart to Import: one day, every field the system accepts, in
+ * one place. It exists so that entering data by hand does not mean visiting four
+ * pages, and so that the answer to "where did this go?" is printed next to the
+ * field before it is even submitted.
+ *
+ * It shares the importer's write path exactly - the same server actions, the
+ * same validation, the same canonical rebuild - so a value entered here and the
+ * same value imported end up in the same row of the same table.
+ */
+import { QuickEntryForm } from '@/components/quick/QuickEntryForm';
+import { getProfile } from '@/lib/data/queries';
+import { DEFAULT_PROFILE } from '@/lib/defaults';
+import { todayForUser } from '@/app/actions/log';
+import {
+  WEIGHT_UNIT_LABEL, LENGTH_UNIT_LABEL, DISTANCE_UNIT_LABEL,
+} from '@/lib/normalization/units';
+
+export const dynamic = 'force-dynamic';
+
+export default async function QuickEntryPage() {
+  const profile = (await getProfile()) ?? DEFAULT_PROFILE;
+  const today = await todayForUser();
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-xl font-light">Quick entry</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-muted">
+          One day, every field, one save. Each group says where its values land.
+          A blank field is recorded as not logged — never as a zero — and groups
+          you leave empty are skipped entirely.
+        </p>
+      </header>
+
+      <QuickEntryForm
+        today={today}
+        weightUnit={WEIGHT_UNIT_LABEL[profile.weightDisplayUnit]}
+        lengthUnit={LENGTH_UNIT_LABEL[profile.lengthDisplayUnit]}
+        distanceUnit={DISTANCE_UNIT_LABEL[profile.distanceDisplayUnit]}
+      />
+    </div>
+  );
+}

@@ -38,9 +38,32 @@ describe('weekly review (spec §51)', () => {
     expect(result.notes.join(' ')).toMatch(/provisional/);
   });
 
-  it('reports zero training sessions rather than null when none were logged', () => {
+  /**
+   * Sessions and sets are counted from different places on purpose. This test
+   * used to pass an empty set list and expect zero sessions, which is what the
+   * bug looked like from the inside: sessions were counted by looking at sets,
+   * so a week of sessions with no set-level detail reported no training at all
+   * while the adherence figure beside it - which reads daily_metrics - said the
+   * week was fully trained.
+   */
+  it('counts sessions from the canonical rollup, not from logged sets', () => {
     const result = weeklyReview(days, [], FIXTURE_PROFILE.targets, FIXTURE_END);
+    const week = days.filter(
+      (d) => d.localDate >= result.value!.weekStart && d.localDate <= result.value!.weekEnd,
+    );
+    const expected = week.reduce((total, d) => total + (d.trainingSessions ?? 0), 0);
+
+    expect(expected).toBeGreaterThan(0);
+    expect(result.value!.trainingSessions).toBe(expected);
+    // No sets were logged, so the set-level figure is a real zero beside it.
+    expect(result.value!.workingSets).toBe(0);
+  });
+
+  it('reports zero sessions when the week genuinely has none', () => {
+    const untrained = days.map((day) => ({ ...day, trainingSessions: null }));
+    const result = weeklyReview(untrained, [], FIXTURE_PROFILE.targets, FIXTURE_END);
     expect(result.value!.trainingSessions).toBe(0);
+    expect(result.value!.workingSets).toBe(0);
   });
 
   it('returns nulls, not zeros, for an empty week', () => {

@@ -51,7 +51,7 @@ export async function rebuildDailyMetrics(
     weightKg: [], waistCm: [], steps: [], activeCalories: [],
     totalCaloriesBurned: [], restingHeartRate: [], hrvMs: [],
     sleepDurationMinutes: [], sleepScore: [], caloriesConsumed: [],
-    proteinG: [], carbsG: [], fatG: [], fiberG: [],
+    proteinG: [], carbsG: [], fatG: [], fiberG: [], fruitVegServings: [],
   };
 
   const push = (key: string, obs: Observation | null) => {
@@ -81,6 +81,10 @@ export async function rebuildDailyMetrics(
     push('carbsG', observation(row.id, row.carbs_g, row.source, row.logged_at, date));
     push('fatG', observation(row.id, row.fat_g, row.source, row.logged_at, date));
     push('fiberG', observation(row.id, row.fiber_g, row.source, row.logged_at, date));
+    // Stored since 0003 and weighted 10/100 by the nutrition score, but with no
+    // canonical column it could never reach the page that scores it.
+    push('fruitVegServings',
+      observation(row.id, row.fruit_veg_servings, row.source, row.logged_at, date));
   }
 
   for (const row of sleep.data ?? []) {
@@ -98,8 +102,11 @@ export async function rebuildDailyMetrics(
   // Aggregates, not conflicts: cardio and training totals are SUMS of the day's
   // sessions, so they are computed rather than resolved. A day with no sessions
   // at all stays null (unknown), while a day with sessions summing to zero is 0.
-  const cardioRows = cardio.data ?? [];
-  const sessionRows = sessions.data ?? [];
+  // Superseded rows are corrections' predecessors: still on disk, deliberately
+  // out of the sum. Without this, re-importing a day to fix a duration would
+  // add the two readings together (58 + 65 = 123) instead of replacing one.
+  const cardioRows = (cardio.data ?? []).filter((r) => r.superseded_at === null);
+  const sessionRows = (sessions.data ?? []).filter((r) => r.superseded_at === null);
 
   const cardioMinutes = cardioRows.length
     ? cardioRows.reduce((total, r) => total + Number(r.duration_minutes ?? 0), 0)
@@ -136,6 +143,7 @@ export async function rebuildDailyMetrics(
       carbs_g: resolved('carbsG'),
       fat_g: resolved('fatG'),
       fiber_g: resolved('fiberG'),
+      fruit_veg_servings: resolved('fruitVegServings'),
       training_sessions: trainingSessions,
       provenance: provenance as unknown as Record<string, unknown>,
       updated_at: new Date().toISOString(),

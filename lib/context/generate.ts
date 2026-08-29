@@ -28,7 +28,10 @@ import { estimateTdee } from '@/lib/analytics/tdee';
 import { forecastTargetDate } from '@/lib/analytics/forecast';
 import { computeAdherence } from '@/lib/analytics/adherence';
 import { computeDataQuality } from '@/lib/analytics/dataQuality';
-import { summariseTraining, type LoggedSet } from '@/lib/analytics/training';
+import {
+  summariseTraining, summariseSessions,
+  type LoggedSet, type TrainingSession,
+} from '@/lib/analytics/training';
 import { generateRecommendations } from '@/lib/analytics/recommendations';
 import {
   cmToInches, kgToLb, kmToMiles,
@@ -38,7 +41,9 @@ import {
 } from '@/lib/normalization/dates';
 import { latestPresent, mean, presentValues, roundTo, trailingWindow } from '@/lib/analytics/series';
 
-export const CONTEXT_VERSION = '1.0';
+// 1.1 splits Training into session-level and exercise-level blocks, so a
+// summary-imported session is reported instead of silently omitted.
+export const CONTEXT_VERSION = '1.1';
 
 /** Spec §31's compression windows. */
 export const DETAIL_DAYS = 14;
@@ -55,6 +60,12 @@ export interface ContextInput {
   days: DailyMetrics[];
   /** Working and warm-up sets over the reporting period. */
   sets: LoggedSet[];
+  /**
+   * Training sessions over the reporting period, read separately from the sets.
+   * A session imported as a summary has no sets, and the pack has to be able to
+   * report it: leaving it out told ChatGPT nothing was trained.
+   */
+  sessions: TrainingSession[];
   cardio: {
     date: LocalDate;
     type: string;
@@ -115,6 +126,7 @@ export function generateContextPack(input: ContextInput): ContextPack {
   const cardioMinutes = pick(days, 'cardioMinutes');
   const zone2 = pick(days, 'zone2Minutes');
   const sessions = pick(days, 'trainingSessions');
+  const sessionSummary = summariseSessions(input.sessions, input.sets);
 
   const weightAverages = movingAverages(weight, end, 'Weight');
   const weightTrend = trend(weight, end, WEIGHT_TREND_WINDOW_DAYS, 'Weight trend');
@@ -362,12 +374,47 @@ export function generateContextPack(input: ContextInput): ContextPack {
   );
 
   // -------------------------------------------------------------- training
+  // Session level and exercise level are reported separately, and the absence
+  // of one is stated rather than silencing the whole section. This block used
+  // to be gated on totalWorkingSets > 0, so a period of imported summary
+  // sessions produced "No training sets logged" and nothing else - the pack
+  // implied no training at all when training had in fact happened.
   parts.push(section('Training'));
-  if (training.value && training.value.totalWorkingSets > 0) {
+  const sessionValue = sessionSummary.value;
+  if (sessionValue && sessionValue.totalSessions > 0) {
     parts.push(
       [
         line('Sessions target', profile.targets.trainingSessionsPerWeek, 'per week'),
-        line('Sessions completed (period)', training.value.totalSessions),
+        line('Sessions completed (period)', sessionValue.totalSessions),
+        line('Total training time (period)', sessionValue.totalMinutes, 'min'),
+        line('Average session heart rate', sessionValue.averageHeartRate, 'bpm'),
+        line('Peak session heart rate', sessionValue.maxHeartRate, 'bpm'),
+        line('Calories burned in sessions (period)', sessionValue.totalCalories, 'kcal'),
+        derivedLine('Training adherence', adherence.training, (v) => percent(v)),
+      ].join('\n'),
+    );
+    if (sessionValue.byType.length > 0) {
+      parts.push('');
+      parts.push('Sessions by type (period):');
+      parts.push(
+        table(
+          ['Session type', 'Sessions', 'Minutes'],
+          sessionValue.byType.map((t) => [
+            t.sessionType,
+            t.sessions,
+            t.minutes === null ? 'not logged' : t.minutes,
+          ]),
+        ),
+      );
+    }
+  } else {
+    parts.push('- No training sessions recorded in this period.');
+  }
+
+  parts.push('');
+  if (training.value && training.value.totalWorkingSets > 0) {
+    parts.push(
+      [
         line('Working sets (period)', training.value.totalWorkingSets),
         line(
           'Total volume (period)',
@@ -378,8 +425,16 @@ export function generateContextPack(input: ContextInput): ContextPack {
         ),
         line('Average RIR', training.value.averageRir),
         line('Average RPE', training.value.averageRpe),
-        derivedLine('Training adherence', adherence.training, (v) => percent(v)),
-      ].join('\n'),
+        // Coverage, not a caveat: the volume above is the volume of the
+        // sessions that were logged set-by-set, and saying how many those were
+        // stops it being read as the period's whole training load.
+        sessionValue && sessionValue.sessionsWithoutSets > 0
+          ? line(
+              'Sessions without exercise detail',
+              `${sessionValue.sessionsWithoutSets} of ${sessionValue.totalSessions}`,
+            )
+          : null,
+      ].filter((l) => l !== null).join('\n'),
     );
     parts.push('');
     parts.push('Sets per muscle group (period):');
@@ -388,6 +443,15 @@ export function generateContextPack(input: ContextInput): ContextPack {
         ['Muscle group', 'Sets', 'Sessions'],
         training.value.byMuscleGroup.map((g) => [g.muscleGroup, g.sets, g.sessions]),
       ),
+    );
+  } else if (sessionValue && sessionValue.totalSessions > 0) {
+    // The distinction that matters to a coach: sessions happened, but what was
+    // performed inside them was not recorded. Volume and RIR are unavailable,
+    // not zero, and no exercise-level conclusion should be drawn.
+    parts.push(
+      `- No exercise or set detail for ${sessionValue.sessionsWithoutSets} of ` +
+        `${sessionValue.totalSessions} session(s). Volume, RIR and per-exercise ` +
+        'progression are not available for those sessions and must not be inferred.',
     );
   } else {
     parts.push('- No training sets logged in this period.');
