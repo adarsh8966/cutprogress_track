@@ -8,13 +8,17 @@
  */
 import { ImportWorkbench } from '@/components/import/ImportWorkbench';
 import { Card } from '@/components/ui/primitives';
-import { getRecentImports } from '@/lib/data/queries';
+import { getProfile, getRecentImports } from '@/lib/data/queries';
 import { todayForUser } from '@/app/actions/log';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ImportPage() {
-  const [today, imports] = await Promise.all([todayForUser(), getRecentImports(15)]);
+  const [today, imports, profile] = await Promise.all([
+    todayForUser(),
+    getRecentImports(15),
+    getProfile(),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -28,7 +32,12 @@ export default async function ImportPage() {
         </p>
       </header>
 
-      <ImportWorkbench today={today} />
+      <ImportWorkbench
+        today={today}
+        weightUnit={profile?.weightDisplayUnit ?? 'LB'}
+        lengthUnit={profile?.lengthDisplayUnit ?? 'IN'}
+        distanceUnit={profile?.distanceDisplayUnit ?? 'MI'}
+      />
 
       <Card title="Recent imports">
         {imports.length === 0 ? (
@@ -40,14 +49,23 @@ export default async function ImportPage() {
                 <span className="tabular text-ink">
                   {row.target_local_date ?? row.created_at.slice(0, 10)}
                 </span>
+                {/*
+                  PENDING means the paste was kept but a write did not land.
+                  That is worth seeing, so it is not styled as background noise.
+                */}
                 <span
                   className={`text-[11px] uppercase tracking-wide ${
                     row.status === 'CONFIRMED'
                       ? 'text-good'
-                      : row.status === 'DUPLICATE'
-                        ? 'text-warn'
-                        : 'text-ink-faint'
+                      : row.status === 'DISCARDED'
+                        ? 'text-ink-faint'
+                        : 'text-warn'
                   }`}
+                  title={
+                    row.status === 'PENDING'
+                      ? 'The paste was saved but its measurements were not written. Import it again.'
+                      : undefined
+                  }
                 >
                   {row.status.toLowerCase()}
                 </span>

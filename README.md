@@ -10,7 +10,8 @@ produces a **Context Pack** you paste into ChatGPT for interpretation.
 ## What it does
 
 - Tracks weight, waist, nutrition, steps, cardio, sleep and resistance training.
-- Imports pasted summaries from Bevel, Google Health or your own notes, with a
+- Imports pasted summaries from Bevel, Google Health or your own notes - one day
+  or a whole week at a time, including training and cardio sessions - with a
   mandatory review step before anything is stored.
 - Computes moving averages, trends, adherence, plateau status, observed TDEE and
   a target-date forecast with a range rather than a single confident date.
@@ -90,7 +91,8 @@ the right day.
 
 - **During the day** — log in Bevel / Health / your training app as usual.
 - **At night** — paste the day's summary into Import, review what the parser
-  found, correct anything wrong, and confirm.
+  found, correct anything wrong, and confirm. Several days can go in at once;
+  each is reviewed and imported as its own record.
 - **Weekly** — open Review, then Context, generate a pack, and paste it into
   your ChatGPT project.
 
@@ -140,7 +142,7 @@ Stated plainly so nothing here implies more than exists:
 
 ```bash
 npm run verify      # typecheck + lint + tests + production build
-npm run test        # 187 tests: pure analytics, parser, and PGlite integration
+npm run test        # pure analytics, the parser and importer, and PGlite integration
 npm run dev
 ```
 
