@@ -48,14 +48,33 @@ npx supabase db push
 This creates the schema, the row-level-security policies, and seeds the
 118-exercise catalog.
 
-**4. Create your account, then close the door**
+**4. Allow sign-up, create your account, then close the door**
 
-CUT OS is single-user by design and has no sign-up form. In the Supabase
-dashboard:
+CUT OS is single-user by design, but it does have a sign-up form at `/signup`
+so you can create that one account without opening the dashboard. Supabase
+refuses `signUp()` unless the project allows it, so in the Supabase dashboard:
 
-- Authentication → Users → **Add user**, with your email and a password.
-- Authentication → Sign In / Providers → Email → turn **off** "Allow new users
+- Authentication → Sign In / Providers → Email → turn **on** "Allow new users
   to sign up".
+- Authentication → URL Configuration → **Redirect URLs** → add
+  `http://localhost:3000/auth/confirm`, plus `https://<your-domain>/auth/confirm`
+  if you deploy. The confirmation email will not come back to the app without
+  this.
+
+Then open `/signup`, create your account, and confirm the address if
+"Confirm email" is on (it is, by default) — the link lands on `/auth/confirm`,
+which exchanges it for a session and drops you on the dashboard.
+
+**Once your account exists, turn "Allow new users to sign up" back off.** The
+page stays, but Supabase will reject any further account. This is the only
+thing standing between a public URL and a stranger creating an account: the
+app cannot tell the owner apart from anyone else who reaches `/signup`. Their
+data would be walled off by row-level security either way — every table is
+keyed to `auth.uid()`, so a second account sees an empty app, never yours —
+but an account you did not create is still an account you did not create.
+
+If you would rather never open the door at all, the old route still works:
+Authentication → Users → **Add user**, with the sign-up switch left off.
 
 **5. Run it**
 
