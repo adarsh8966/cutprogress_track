@@ -420,11 +420,24 @@ export async function updateWorkoutSession(formData: FormData): Promise<ActionRe
 
   const { data: existing, error: readError } = await supabase
     .from('workout_sessions')
-    .select('local_date')
+    .select('local_date, superseded_at')
     .eq('id', values.sessionId)
     .maybeSingle();
   if (readError) return { ok: false, message: readError.message };
   if (!existing) return { ok: false, message: 'That session no longer exists.' };
+  // A superseded session is history: a later observation replaced it and the
+  // day's totals already exclude it (migration 0011). Editing it would appear
+  // to work, change no total anywhere, and quietly rewrite a record kept
+  // precisely so the correction stays traceable.
+  if (existing.superseded_at !== null) {
+    return {
+      ok: false,
+      message:
+        'This session was replaced by a later correction, so it no longer counts '
+        + "towards the day's totals and is kept only as history. Edit the session "
+        + 'that replaced it instead.',
+    };
+  }
 
   const { error } = await supabase
     .from('workout_sessions')

@@ -32,6 +32,11 @@ const db = vi.hoisted(() => ({
   existingImport: null as { id: string; status: string } | null,
   /** Rows an earlier unfinished attempt left behind, keyed by table. */
   resumeWrote: {} as Record<string, string[]>,
+  /**
+   * The sessions a REPLACE targets, as they currently stand. superseded_at is
+   * what says whether an earlier attempt finished marking them.
+   */
+  supersessionTargets: {} as Record<string, { id: string; superseded_at: string | null }[]>,
   /** Injected read failures, keyed by table. */
   selectErrors: {} as Record<string, { message: string }>,
   nextId: 0,
@@ -43,6 +48,7 @@ const db = vi.hoisted(() => ({
     this.user = { id: USER };
     this.existingImport = null;
     this.resumeWrote = {};
+    this.supersessionTargets = {};
     this.selectErrors = {};
     this.nextId = 0;
   },
@@ -93,15 +99,31 @@ function fakeClient() {
             },
           };
         },
-        select() {
+        select(columns = '*') {
+          const selectError = db.selectErrors[table] ?? null;
+          // Awaiting the builder resolves the query. Which query it is comes
+          // from the column list, which is how the two reads the resume path
+          // makes are told apart: the supersession targets ask for
+          // superseded_at, the import's own rows do not.
+          const resolved = () => ({
+            data: selectError
+              ? null
+              : columns.includes('superseded_at')
+                ? db.supersessionTargets[table] ?? []
+                : (db.resumeWrote[table] ?? []).map((id) => ({ id })),
+            error: selectError,
+          });
           const filtered = {
             eq: () => filtered,
+            in: () => filtered,
             maybeSingle: async () => ({ data: db.existingImport, error: null }),
             /** Rows a previous, unfinished attempt already wrote to this table. */
             limit: async () => ({
               data: (db.resumeWrote[table] ?? []).map((id) => ({ id })),
-              error: db.selectErrors[table] ?? null,
+              error: selectError,
             }),
+            then: (resolve: (value: ReturnType<typeof resolved>) => unknown) =>
+              resolve(resolved()),
           };
           return filtered;
         },
@@ -561,6 +583,103 @@ describe('a resumed import still rebuilds its day', () => {
     expect(result.records[0]!.status).toBe('IMPORTED');
     expect(result.records[0]!.wrote).toEqual([]);
     expect(rebuildRange).toHaveBeenCalledWith(expect.anything(), USER, ['2026-09-01']);
+  });
+});
+
+/**
+ * The hole this closes: an attempt that inserted the replacement and then
+ * failed before superseding the row it replaces left BOTH counting, and the
+ * resume said "kept as it was, so the day is not counted twice" - which was
+ * the one thing that was not true. 58 + 65 = 123, reached by the single path
+ * that skipped migration 0011.
+ */
+describe('a resumed REPLACE finishes superseding what it replaced', () => {
+  function resumingReplace() {
+    db.errors.health_imports = { message: 'duplicate key', code: '23505' };
+    db.existingImport = { id: 'unfinished', status: 'PENDING' };
+    db.resumeWrote = { workout_sessions: ['the-replacement'] };
+  }
+
+  const replacing = (supersedes: string) =>
+    record({
+      sessions: [session({ sessionMinutes: 65, disposition: 'REPLACE', supersedes })],
+    });
+
+  const OLD = '44444444-4444-4444-8444-444444444444';
+  const OTHER = '55555555-5555-4555-8555-555555555555';
+
+  it('completes the supersession the earlier attempt did not', async () => {
+    resumingReplace();
+    db.supersessionTargets = { workout_sessions: [{ id: OLD, superseded_at: null }] };
+
+    const result = await confirmImport({ records: [replacing(OLD)] });
+
+    expect(result.records[0]!.status).toBe('IMPORTED');
+    // No second insert: that is what would double the day.
+    expect(rowsFor('workout_sessions')).toHaveLength(0);
+    const supersession = db.updated.find(
+      (u) => u.table === 'workout_sessions' && u.values.superseded_by !== undefined,
+    );
+    expect(supersession).toBeDefined();
+    expect(supersession!.values.superseded_by).toBe('the-replacement');
+    expect(supersession!.values.superseded_at).toEqual(expect.any(String));
+  });
+
+  it('does nothing when the earlier attempt already superseded it', async () => {
+    resumingReplace();
+    db.supersessionTargets = {
+      workout_sessions: [{ id: OLD, superseded_at: '2026-09-01T10:00:00Z' }],
+    };
+
+    const result = await confirmImport({ records: [replacing(OLD)] });
+
+    expect(result.records[0]!.status).toBe('IMPORTED');
+    expect(
+      db.updated.filter((u) => u.table === 'workout_sessions'),
+    ).toHaveLength(0);
+  });
+
+  it('fails loudly rather than guessing when the pairing is ambiguous', async () => {
+    resumingReplace();
+    db.resumeWrote = { workout_sessions: ['replacement-a', 'replacement-b'] };
+    db.supersessionTargets = {
+      workout_sessions: [
+        { id: OLD, superseded_at: null },
+        { id: OTHER, superseded_at: null },
+      ],
+    };
+
+    const result = await confirmImport({
+      records: [record({
+        sessions: [
+          session({ sessionMinutes: 65, disposition: 'REPLACE', supersedes: OLD }),
+          session({ sessionMinutes: 40, disposition: 'REPLACE', supersedes: OTHER }),
+        ],
+      })],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.records[0]!.status).toBe('FAILED');
+    // The user is told the day is currently wrong, not that it was fine.
+    expect(result.records[0]!.message).toMatch(/counted in this day/i);
+    expect(
+      db.updated.filter((u) => u.values.superseded_by !== undefined),
+    ).toHaveLength(0);
+  });
+
+  it('reports a failed lookup instead of assuming nothing is outstanding', async () => {
+    resumingReplace();
+    db.supersessionTargets = { workout_sessions: [{ id: OLD, superseded_at: null }] };
+    db.selectErrors.workout_sessions = { message: 'connection reset' };
+
+    const result = await confirmImport({ records: [replacing(OLD)] });
+
+    // The resume check itself reads this table first, so the failure surfaces
+    // there. Either way the day is reported as failed, never as kept.
+    expect(result.records[0]!.status).toBe('FAILED');
+    expect(
+      db.updated.filter((u) => u.values.superseded_by !== undefined),
+    ).toHaveLength(0);
   });
 });
 

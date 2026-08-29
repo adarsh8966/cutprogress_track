@@ -63,7 +63,7 @@ export default async function RecoveryPage() {
   const today = await todayForUser();
 
   const recovery = recoverySummary(metrics, end);
-  const { restingHeartRate, hrv, sleepScore, totalCaloriesBurned } = recovery;
+  const { restingHeartRate, hrv, sleepScore, totalCaloriesBurned, activeCalories } = recovery;
 
   const recentCardio = cardio.slice(0, 12);
   const chartStart = addDays(end, -29);
@@ -159,9 +159,11 @@ export default async function RecoveryPage() {
         </Card>
       </div>
 
-      {/* total_calories_burned has been resolved into daily_metrics since 0005
-          and written by two forms, and was read by no page at all - the same
-          "saved but invisible" fault as resting heart rate, but total. */}
+      {/* Energy out. Both of these were resolved into daily_metrics, written by
+          two forms each, and read by no page at all - the same "saved but
+          invisible" fault as resting heart rate. Active calories is the one
+          that survived longest: two forms named Recovery as its destination
+          while Recovery did not show it. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card title="Total calories burned">
           <DerivedFigure
@@ -181,6 +183,25 @@ export default async function RecoveryPage() {
             size="sm"
           />
           <Evidence derived={totalCaloriesBurned.average30} />
+        </Card>
+        <Card title="Active calories">
+          <DerivedFigure
+            derived={activeCalories.latest}
+            format={whole}
+            unit="kcal"
+            size="sm"
+            sub={measuredOn(activeCalories.latest)}
+          />
+          <Evidence derived={activeCalories.latest} />
+        </Card>
+        <Card title="Active calories (30-day)">
+          <DerivedFigure
+            derived={activeCalories.average30}
+            format={whole}
+            unit="kcal"
+            size="sm"
+          />
+          <Evidence derived={activeCalories.average30} />
         </Card>
       </div>
 

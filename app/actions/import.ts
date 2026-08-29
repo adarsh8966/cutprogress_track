@@ -576,6 +576,79 @@ async function supersede(
   return null;
 }
 
+/**
+ * Completes a supersession an earlier attempt at this same paste left undone.
+ *
+ * The resume path below skips re-inserting a summed table an earlier attempt
+ * already wrote, which is right - re-inserting would permanently double the
+ * day. But it used to skip supersede() with it, and those are not the same
+ * thing. An attempt that inserted the replacement and then failed before
+ * marking the row it replaces leaves BOTH counting: 58 + 65 = 123, the exact
+ * arithmetic migration 0011 exists to prevent, arrived at by the one path that
+ * bypassed it.
+ *
+ * So the resume checks the targets rather than assuming. Already superseded
+ * means the earlier attempt finished the job. Otherwise the replacement row is
+ * still on disk under this import id, and when exactly one row answers to
+ * exactly one outstanding target the pairing is unambiguous and is completed
+ * here. When it is not unambiguous, nothing is guessed: the day is reported as
+ * failed, naming what is wrong with it, because silently agreeing that a
+ * doubled day was "kept as it was" is the worse answer.
+ *
+ * Returns an error message, or null when the day is safe.
+ */
+async function completeSupersessions(
+  supabase: ActionClient,
+  table: 'workout_sessions' | 'cardio_sessions',
+  sessions: ConfirmSession[],
+  importId: string,
+): Promise<string | null> {
+  const targetIds = sessions
+    .filter((session) => session.disposition === 'REPLACE' && session.supersedes !== null)
+    .map((session) => session.supersedes!);
+  if (targetIds.length === 0) return null;
+
+  const { data: targets, error } = await supabase
+    .from(table)
+    .select('id, superseded_at')
+    .in('id', targetIds);
+  // A failed lookup here would otherwise read as "nothing outstanding", which
+  // is the reassurance that made this function necessary.
+  if (error) {
+    return 'could not check whether the sessions this replaces were already '
+      + `superseded (${error.message}). Nothing was changed. Try again.`;
+  }
+
+  const outstanding = (targets ?? []).filter((row) => row.superseded_at === null);
+  if (outstanding.length === 0) return null;
+
+  const { data: written, error: writtenError } = await supabase
+    .from(table)
+    .select('id')
+    .eq('import_id', importId);
+  if (writtenError) {
+    return 'could not find the replacement this import already wrote '
+      + `(${writtenError.message}). Nothing was changed. Try again.`;
+  }
+
+  if (outstanding.length === 1 && (written ?? []).length === 1) {
+    const { error: updateError } = await supabase
+      .from(table)
+      .update({ superseded_at: new Date().toISOString(), superseded_by: written![0]!.id })
+      .eq('id', outstanding[0]!.id);
+    if (updateError) return updateError.message;
+    return null;
+  }
+
+  return `an earlier attempt at this day wrote its ${
+    table === 'workout_sessions' ? 'workouts' : 'cardio sessions'
+  } but did not mark the ${outstanding.length} session${
+    outstanding.length === 1 ? '' : 's'
+  } they replace as superseded, and there is more than one candidate, so which `
+    + 'replaced which cannot be established from here. Both readings are counted in '
+    + "this day's totals right now. Open the session and replace the old one by hand.";
+}
+
 /** True when the day carries at least one measurement or session. */
 function hasAnything(record: ConfirmRecord): boolean {
   if (record.sessions.length > 0) return true;
@@ -793,6 +866,10 @@ async function importOneRecord(
     (s) => s.kind === 'WORKOUT' && s.disposition !== 'KEEP',
   );
   if (workouts.length > 0 && alreadyWritten.has('workout_sessions')) {
+    const failure = await completeSupersessions(
+      supabase, 'workout_sessions', workouts, importId,
+    );
+    if (failure) return fail(`Workout: ${failure}`);
     kept.push('workouts');
   } else if (workouts.length > 0) {
     const { data: inserted, error } = await supabase.from('workout_sessions').insert(
@@ -825,6 +902,10 @@ async function importOneRecord(
     (s) => s.kind === 'CARDIO' && s.disposition !== 'KEEP',
   );
   if (cardio.length > 0 && alreadyWritten.has('cardio_sessions')) {
+    const failure = await completeSupersessions(
+      supabase, 'cardio_sessions', cardio, importId,
+    );
+    if (failure) return fail(`Cardio: ${failure}`);
     kept.push('cardio sessions');
   } else if (cardio.length > 0) {
     const { data: inserted, error } = await supabase.from('cardio_sessions').insert(
