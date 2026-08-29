@@ -114,10 +114,23 @@ describe('middleware: protected routes', () => {
     expect(location.searchParams.get('next')).toBe(path);
   });
 
-  it('lets a signed-out visitor reach /login', async () => {
+  it.each(['/login', '/signup'])(
+    'lets a signed-out visitor reach %s',
+    async (path) => {
+      supabase.getUser = () => Promise.resolve(signedOut);
+
+      const response = await middleware(request(path));
+
+      expect(response.headers.get('location')).toBeNull();
+    },
+  );
+
+  // The confirmation link is clicked while still signed out - that request is
+  // what creates the session, so bouncing it to /login would break sign-up.
+  it('lets the email confirmation landing run while signed out', async () => {
     supabase.getUser = () => Promise.resolve(signedOut);
 
-    const response = await middleware(request('/login'));
+    const response = await middleware(request('/auth/confirm?code=auth-code'));
 
     expect(response.headers.get('location')).toBeNull();
   });
@@ -130,16 +143,19 @@ describe('middleware: protected routes', () => {
     expect(response.headers.get('location')).toBeNull();
   });
 
-  it('bypasses /login for a signed-in user and lands them on /dashboard', async () => {
-    supabase.getUser = () => Promise.resolve(signedIn);
+  it.each(['/login', '/signup'])(
+    'bypasses %s for a signed-in user and lands them on /dashboard',
+    async (path) => {
+      supabase.getUser = () => Promise.resolve(signedIn);
 
-    const response = await middleware(request('/login'));
+      const response = await middleware(request(path));
 
-    expect(response.status).toBe(307);
-    const location = new URL(response.headers.get('location')!);
-    expect(location.pathname).toBe('/dashboard');
-    expect(location.search).toBe('');
-  });
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get('location')!);
+      expect(location.pathname).toBe('/dashboard');
+      expect(location.search).toBe('');
+    },
+  );
 
   it('drops the next parameter when bouncing a signed-in user off /login', async () => {
     supabase.getUser = () => Promise.resolve(signedIn);
@@ -151,13 +167,16 @@ describe('middleware: protected routes', () => {
     expect(new URL(response.headers.get('location')!).search).toBe('');
   });
 
-  it('treats a path that merely starts with a public one as protected', async () => {
-    supabase.getUser = () => Promise.resolve(signedOut);
+  it.each(['/login-decoy', '/signup-decoy', '/authorise'])(
+    'treats %s as protected rather than public by prefix',
+    async (path) => {
+      supabase.getUser = () => Promise.resolve(signedOut);
 
-    const response = await middleware(request('/login-decoy'));
+      const response = await middleware(request(path));
 
-    expect(new URL(response.headers.get('location')!).pathname).toBe('/login');
-  });
+      expect(new URL(response.headers.get('location')!).pathname).toBe('/login');
+    },
+  );
 
   it('passes everything through when Supabase is not configured', async () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -200,6 +219,18 @@ describe('middleware: session persistence', () => {
     expect(response.cookies.get('sb-projectref-auth-token.1')?.value).toBe(
       'rotated-refresh-token',
     );
+  });
+
+  it('returns refreshed cookies on the /signup -> /dashboard bypass', async () => {
+    supabase.getUser = () => Promise.resolve(signedIn);
+    supabase.writes = ROTATED_COOKIES;
+
+    const response = await middleware(request('/signup'));
+
+    expect(cookieNames(response)).toEqual([
+      'sb-projectref-auth-token',
+      'sb-projectref-auth-token.1',
+    ]);
   });
 
   it('keeps cookies long-lived through a redirect rather than session-scoped', async () => {

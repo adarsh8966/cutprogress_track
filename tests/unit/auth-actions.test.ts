@@ -19,6 +19,9 @@ const cookieStore = vi.hoisted(() => ({
 
 const nav = vi.hoisted(() => ({ revalidatePath: vi.fn(), redirect: vi.fn() }));
 
+/** Stands in for the incoming request headers when resolving the site URL. */
+const requestHeaders = vi.hoisted(() => new Headers({ origin: 'https://cut-os.example.com' }));
+
 const ssr = vi.hoisted(() => ({
   /** Captured so the cookie handlers can be driven directly. */
   options: null as null | {
@@ -29,7 +32,10 @@ const ssr = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('next/headers', () => ({ cookies: async () => cookieStore }));
+vi.mock('next/headers', () => ({
+  cookies: async () => cookieStore,
+  headers: async () => requestHeaders,
+}));
 vi.mock('next/cache', () => ({ revalidatePath: nav.revalidatePath }));
 vi.mock('next/navigation', () => ({ redirect: nav.redirect }));
 
@@ -42,11 +48,12 @@ vi.mock('@supabase/ssr', () => ({
 
 const supabaseAuth = {
   signInWithPassword: vi.fn(),
+  signUp: vi.fn(),
   signOut: vi.fn(),
 };
 
 const { createActionClient } = await import('@/lib/supabase/server');
-const { signIn, signOut } = await import('@/app/actions/auth');
+const { signIn, signUp, signOut } = await import('@/app/actions/auth');
 
 function credentials(email: string, password: string) {
   const formData = new FormData();
@@ -61,7 +68,11 @@ beforeEach(() => {
   cookieStore.set.mockClear();
   nav.revalidatePath.mockClear();
   nav.redirect.mockClear();
+  delete process.env.NEXT_PUBLIC_SITE_URL;
   supabaseAuth.signInWithPassword.mockReset().mockResolvedValue({ error: null });
+  supabaseAuth.signUp
+    .mockReset()
+    .mockResolvedValue({ data: { user: { id: 'user-1' }, session: null }, error: null });
   supabaseAuth.signOut.mockReset().mockResolvedValue({ error: null });
 });
 
@@ -147,6 +158,176 @@ describe('signIn', () => {
     const result = await signIn(credentials('user@example.com', 'hunter2-secret'));
 
     expect(JSON.stringify(result)).not.toContain('hunter2-secret');
+  });
+});
+
+function newAccount(
+  email = 'user@example.com',
+  password = 'correct-horse',
+  confirmPassword = password,
+) {
+  const formData = new FormData();
+  formData.set('email', email);
+  formData.set('password', password);
+  formData.set('confirmPassword', confirmPassword);
+  return formData;
+}
+
+describe('signUp validation', () => {
+  it('rejects a malformed address and names the field', async () => {
+    const result = await signUp(newAccount('not-an-email'));
+
+    expect(result.ok).toBe(false);
+    expect(result.errors?.email).toBe('Enter a valid email address.');
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('rejects a password under eight characters', async () => {
+    const result = await signUp(newAccount('user@example.com', 'short12'));
+
+    expect(result.ok).toBe(false);
+    expect(result.errors?.password).toBe('Password must be at least 8 characters.');
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  // The browser can be bypassed by posting the form directly, so the mismatch
+  // has to be caught on the server or it is not caught at all.
+  it('rejects a confirmation that does not match', async () => {
+    const result = await signUp(
+      newAccount('user@example.com', 'correct-horse', 'correct-hoarse'),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors?.confirmPassword).toBe('The two passwords do not match.');
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty confirmation', async () => {
+    const result = await signUp(newAccount('user@example.com', 'correct-horse', ''));
+
+    expect(result.ok).toBe(false);
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('reports every bad field at once rather than one at a time', async () => {
+    const result = await signUp(newAccount('not-an-email', 'short', 'mismatch'));
+
+    expect(Object.keys(result.errors ?? {}).sort()).toEqual([
+      'confirmPassword',
+      'email',
+      'password',
+    ]);
+  });
+
+  it('never echoes the submitted password back to the caller', async () => {
+    const result = await signUp(
+      newAccount('user@example.com', 'hunter2-secret', 'different-secret'),
+    );
+
+    expect(JSON.stringify(result)).not.toContain('hunter2-secret');
+  });
+});
+
+describe('signUp success', () => {
+  it('creates the account with the submitted credentials', async () => {
+    await signUp(newAccount());
+
+    expect(supabaseAuth.signUp).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      password: 'correct-horse',
+      options: { emailRedirectTo: 'https://cut-os.example.com/auth/confirm' },
+    });
+  });
+
+  it('prefers a configured site URL over the request headers', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://cutos.app/';
+
+    await signUp(newAccount());
+
+    expect(supabaseAuth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: { emailRedirectTo: 'https://cutos.app/auth/confirm' },
+      }),
+    );
+  });
+
+  // Confirmation on: Supabase withholds the session until the address is
+  // proven, so there is nothing to navigate to yet.
+  it('asks for email confirmation when no session comes back', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: { id: 'user-1' }, session: null },
+      error: null,
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(true);
+    expect(result.needsEmailConfirmation).toBe(true);
+    expect(result.message).toContain('confirmation link');
+  });
+
+  it('does not revalidate when there is no session to render with', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: { id: 'user-1' }, session: null },
+      error: null,
+    });
+
+    await signUp(newAccount());
+
+    expect(nav.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  // Confirmation off: the session cookies are already written, so the caller
+  // can go straight to the dashboard.
+  it('signs the user straight in when a session comes back', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: { id: 'user-1' }, session: { access_token: 'token' } },
+      error: null,
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(true);
+    expect(result.needsEmailConfirmation).toBe(false);
+    expect(nav.revalidatePath).toHaveBeenCalledWith('/', 'layout');
+  });
+});
+
+describe('signUp failure', () => {
+  it('explains a project that is not accepting sign-ups', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: 'signup_disabled', message: 'Signups not allowed' },
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Authentication');
+  });
+
+  it('points an existing account at the sign-in page', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: 'user_already_exists', message: 'User already registered' },
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Sign in instead.');
+  });
+
+  it('passes any other Supabase message through unchanged', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: 'weak_password', message: 'Password is known to be weak.' },
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toBe('Password is known to be weak.');
   });
 });
 

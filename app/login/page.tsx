@@ -1,17 +1,32 @@
 /**
  * Sign in (spec §34).
  *
- * There is no sign-up form. CUT OS is a private, single-user system: the one
- * account is created in the Supabase dashboard and public signup is disabled
- * there. See README.
+ * Accounts are created at /signup, which calls Supabase's signUp(). Whether
+ * that is open to anyone or closed after the first account is a Supabase
+ * project setting, not an application one - see README, step 4.
  */
+import Link from 'next/link';
 import { isSupabaseConfigured } from '@/lib/supabase/env';
 import { LoginForm } from '@/components/ui/LoginForm';
+import { SetupNotice } from '@/components/ui/SetupNotice';
 
 export const dynamic = 'force-dynamic';
 
-export default function LoginPage() {
-  const configured = isSupabaseConfigured();
+/** Why /auth/confirm sent someone here instead of to the dashboard. */
+const ERRORS: Record<string, string> = {
+  confirmation_link:
+    'That confirmation link did not work. It may have expired or already been ' +
+    'used. Sign in below, or create the account again.',
+  unconfigured: 'Supabase is not configured, so the confirmation link could not be checked.',
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const notice = error ? ERRORS[error] : undefined;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-5">
@@ -21,23 +36,27 @@ export default function LoginPage() {
           Private fitness measurement and analytics.
         </p>
 
-        {configured ? (
-          <LoginForm />
+        {notice && (
+          <p
+            role="alert"
+            className="mb-6 rounded border border-warn/40 bg-warn/5 p-3 text-xs leading-relaxed text-ink-muted"
+          >
+            {notice}
+          </p>
+        )}
+
+        {isSupabaseConfigured() ? (
+          <>
+            <LoginForm />
+            <p className="mt-6 text-xs text-ink-faint">
+              No account yet?{' '}
+              <Link href="/signup" className="text-ink-muted underline hover:text-ink">
+                Create account
+              </Link>
+            </p>
+          </>
         ) : (
-          <div className="rounded-lg border border-warn/40 bg-surface p-5 text-sm">
-            <p className="mb-3 font-medium text-warn">Supabase is not configured</p>
-            <p className="mb-3 leading-relaxed text-ink-muted">
-              Copy <code className="text-ink">.env.example</code> to{' '}
-              <code className="text-ink">.env.local</code> and fill in your project
-              URL and anon key, then run the migrations:
-            </p>
-            <pre className="overflow-x-auto rounded border border-line bg-ground p-3 text-[11px] text-ink-muted">
-              supabase db push
-            </pre>
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-              Full setup steps are in the README.
-            </p>
-          </div>
+          <SetupNotice />
         )}
       </div>
     </div>

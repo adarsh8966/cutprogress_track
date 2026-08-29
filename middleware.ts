@@ -30,8 +30,16 @@ import { createServerClient } from '@supabase/ssr';
 import type { User } from '@supabase/supabase-js';
 import { isSupabaseConfigured } from '@/lib/supabase/env';
 
-/** Reachable without a session. Everything else requires one. */
-const PUBLIC_PATHS = ['/login', '/auth'];
+/**
+ * Reachable without a session. Everything else requires one.
+ *
+ * /auth covers the email-confirmation landing, which has to run while the
+ * visitor is still signed out - that request is what creates the session.
+ */
+const PUBLIC_PATHS = ['/login', '/signup', '/auth'];
+
+/** Where a signed-in visitor has no reason to be. */
+const AUTH_PATHS = ['/login', '/signup'];
 
 /** Exact match or a sub-path, so that /login-decoy is not treated as public. */
 function isPublicPath(pathname: string): boolean {
@@ -107,7 +115,7 @@ export async function middleware(request: NextRequest) {
     return redirectTo('/login', pathname);
   }
 
-  if (user && pathname === '/login') {
+  if (user && AUTH_PATHS.includes(pathname)) {
     return redirectTo('/dashboard');
   }
 
