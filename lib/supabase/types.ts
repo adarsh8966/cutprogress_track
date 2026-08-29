@@ -137,6 +137,7 @@ export type CardioSessionRow = {
   duration_minutes: number;
   distance_km: number | null;
   average_heart_rate: number | null;
+  max_heart_rate: number | null;
   hr_zone: number | null;
   calories: number | null;
   notes: string | null;
@@ -167,6 +168,9 @@ export type WorkoutSessionRow = {
   end_time: string | null;
   duration_minutes: number | null;
   session_type: SessionTypeEnum;
+  average_heart_rate: number | null;
+  max_heart_rate: number | null;
+  calories: number | null;
   notes: string | null;
   completed: boolean;
   source: DataSourceEnum;

@@ -265,6 +265,7 @@ export async function logCardio(formData: FormData): Promise<ActionResult> {
         ? null
         : canonicalDistance(parsed.data.distance, profile?.distanceDisplayUnit ?? 'MI'),
     average_heart_rate: parsed.data.averageHeartRate ?? null,
+    max_heart_rate: null,
     hr_zone: parsed.data.hrZone ?? null,
     calories: null,
     notes: null,
@@ -308,6 +309,9 @@ export async function startWorkout(
       end_time: null,
       duration_minutes: parsed.data.duration ?? null,
       session_type: parsed.data.sessionType,
+      average_heart_rate: null,
+      max_heart_rate: null,
+      calories: null,
       notes: parsed.data.notes || null,
       completed: true,
       source: 'MANUAL',

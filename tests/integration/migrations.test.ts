@@ -109,6 +109,41 @@ describe('migrations', () => {
     ).rejects.toThrow();
   });
 
+  it('adds the session intensity columns from 0010, all nullable', async () => {
+    const { rows } = await db.query<{
+      table_name: string; column_name: string; is_nullable: string;
+    }>(
+      `select table_name, column_name, is_nullable from information_schema.columns
+       where table_schema = 'public'
+         and ((table_name = 'cardio_sessions' and column_name = 'max_heart_rate')
+           or (table_name = 'workout_sessions'
+               and column_name in ('average_heart_rate', 'max_heart_rate', 'calories')))
+       order by table_name, column_name`,
+    );
+
+    expect(rows.map((r) => `${r.table_name}.${r.column_name}`)).toEqual([
+      'cardio_sessions.max_heart_rate',
+      'workout_sessions.average_heart_rate',
+      'workout_sessions.calories',
+      'workout_sessions.max_heart_rate',
+    ]);
+    // A summary that did not report a heart rate must store NULL, not 0.
+    for (const row of rows) expect(row.is_nullable).toBe('YES');
+  });
+
+  it('bounds the new heart-rate columns exactly as the existing ones are', async () => {
+    const { rows } = await db.query<{ definition: string }>(
+      `select pg_get_constraintdef(oid) as definition from pg_constraint
+       where conrelid in ('cardio_sessions'::regclass, 'workout_sessions'::regclass)
+         and contype = 'c'`,
+    );
+    const all = rows.map((r) => r.definition).join(' ');
+    expect(all).toMatch(/max_heart_rate[\s\S]*25[\s\S]*250/);
+    // A maximum below the average is a transcription error, not a measurement.
+    expect(rows.some((r) => /hr_ordered/i.test(r.definition)
+      || />= *average_heart_rate/.test(r.definition))).toBe(true);
+  });
+
   it('refuses a recommendation with no evidence (spec §57)', async () => {
     const { rows } = await db.query<{ id: string }>(
       `insert into auth.users (email) values ('evidence-check@example.com') returning id`,

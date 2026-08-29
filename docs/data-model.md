@@ -13,8 +13,8 @@ by a named source.
 | `metric_observations` | steps, active calories, resting HR, HRV |
 | `nutrition_logs` / `nutrition_items` | per-day macros; optional per-food detail |
 | `sleep_records` | duration, score |
-| `cardio_sessions` | type, duration, distance, HR zone |
-| `workout_sessions` / `workout_sets` | sessions and set-level data |
+| `cardio_sessions` | type, duration, distance, average and maximum HR, HR zone, calories |
+| `workout_sessions` / `workout_sets` | sessions with duration, average and maximum HR and calories; set-level data |
 | `health_imports` | the original pasted text, verbatim and forever |
 
 These are never updated and never deleted. That is enforced in `0008_rls.sql` by
@@ -98,3 +98,26 @@ but not digits, so a genuinely edited value imports as new data.
 
 The uniqueness is a database constraint, not an application check, so it cannot
 be raced past.
+
+**The key is per day, not per paste.** A paste describing a week becomes seven
+`health_imports` rows, each hashed over its own lines. That is what makes
+re-pasting the week after correcting one day import the corrected day and refuse
+the other six, instead of duplicating all seven. A single-day paste is one
+record whose text is the whole input, so its key is unchanged.
+
+An import row is written `PENDING` before any observation is, and only updated
+to `CONFIRMED` once every domain write has succeeded. A row left `PENDING` is an
+import whose raw text was preserved but whose data did not land — visible in the
+list on `/import`.
+
+## What the importer writes
+
+`app/actions/import.ts` fans one confirmed day out across the raw layer:
+`body_measurements`, `nutrition_logs`, `metric_observations`, `sleep_records`,
+one `workout_sessions` row per training block and one `cardio_sessions` row per
+cardio block, all tagged with the `import_id` that produced them. It then calls
+`rebuildRange` for the days it wrote.
+
+Two fields the parser understands are deliberately **not** stored: pace and
+speed, both fully determined by `distance_km` and `duration_minutes`. The review
+screen names them rather than showing a value it cannot keep.

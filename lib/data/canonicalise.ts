@@ -147,13 +147,33 @@ export async function rebuildDailyMetrics(
   return { provenance };
 }
 
-/** Rebuilds a range, used after a multi-day import. */
+/**
+ * Rebuilds a range, used after a multi-day import.
+ *
+ * Each day is rebuilt independently and a failure is collected rather than
+ * thrown, because these days are not related: letting the first bad one abort
+ * the rest would leave later days missing from daily_metrics - and therefore
+ * from the dashboard and the Context Pack - with no route back, since a repeat
+ * import is refused as a duplicate and so never triggers another rebuild.
+ *
+ * daily_metrics is a cache of a pure function over the raw layer, so a day that
+ * fails here has lost nothing; it just has not been recomputed yet.
+ */
 export async function rebuildRange(
   supabase: Client,
   userId: string,
   dates: LocalDate[],
-): Promise<void> {
+): Promise<{ failed: { date: LocalDate; message: string }[] }> {
+  const failed: { date: LocalDate; message: string }[] = [];
   for (const date of dates) {
-    await rebuildDailyMetrics(supabase, userId, date);
+    try {
+      await rebuildDailyMetrics(supabase, userId, date);
+    } catch (error) {
+      failed.push({
+        date,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
+  return { failed };
 }
