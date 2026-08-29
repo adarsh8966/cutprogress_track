@@ -32,11 +32,32 @@ export interface WeeklyReview {
   averageCalories: number | null;
   averageProteinG: number | null;
   averageSteps: number | null;
+  /**
+   * Sessions recorded that week, counted from daily_metrics - the same source
+   * the adherence block below uses. It used to be counted from workout_sets
+   * instead, so a week of imported summary sessions reported "0 sessions"
+   * directly beside "training adherence 100%": two numbers about the same week
+   * disagreeing because they were reading different tables.
+   */
   trainingSessions: number;
+  /** Sets logged inside those sessions. Zero is a real answer, not a gap. */
+  workingSets: number;
   cardioMinutes: number | null;
   overallAdherence: number | null;
   assessment: Assessment;
   daysLogged: number;
+}
+
+/**
+ * Sessions across a set of days, from the canonical rollup.
+ *
+ * daily_metrics.training_sessions is computed directly from workout_sessions
+ * (lib/data/canonicalise.ts), so it counts every session that happened -
+ * including one imported as a summary, which has no sets to be counted by.
+ * A day with no sessions at all is null, and null does not add to the total.
+ */
+function sessionsIn(days: DailyMetrics[]): number {
+  return days.reduce((total, day) => total + (day.trainingSessions ?? 0), 0);
 }
 
 function pick(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
@@ -129,7 +150,8 @@ export function weeklyReview(
     averageCalories: averageOf('caloriesConsumed'),
     averageProteinG: averageOf('proteinG'),
     averageSteps: averageOf('steps'),
-    trainingSessions: training.value?.totalSessions ?? 0,
+    trainingSessions: sessionsIn(week),
+    workingSets: training.value?.totalWorkingSets ?? 0,
     cardioMinutes: cardioValues.length ? roundTo(cardioValues.reduce((a, b) => a + b, 0), 0) : null,
     overallAdherence: adherence.overall.value,
     assessment,
@@ -162,7 +184,9 @@ export interface MonthlyReview {
   waistChangeCm: number | null;
   averageCalories: number | null;
   averageSteps: number | null;
+  /** Counted from daily_metrics, so imported sessions are included. */
   trainingSessions: number;
+  workingSets: number;
   longestLoggingStreak: number;
   daysLogged: number;
   dayCount: number;
@@ -210,7 +234,8 @@ export function monthlyReview(
       waists.length > 1 ? roundTo(waists[waists.length - 1]! - waists[0]!, 2) : null,
     averageCalories: calories.length ? roundTo(mean(calories)!, 0) : null,
     averageSteps: steps.length ? roundTo(mean(steps)!, 0) : null,
-    trainingSessions: training.value?.totalSessions ?? 0,
+    trainingSessions: sessionsIn(month),
+    workingSets: training.value?.totalWorkingSets ?? 0,
     longestLoggingStreak: best,
     daysLogged: month.filter((day) => day.caloriesConsumed !== null).length,
     dayCount: month.length,

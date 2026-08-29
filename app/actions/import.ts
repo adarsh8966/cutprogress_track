@@ -45,6 +45,16 @@ import type { CardioTypeEnum, SessionTypeEnum } from '@/lib/supabase/types';
 // Preview
 // ---------------------------------------------------------------------------
 
+/** A session already on the day an import is about to write to. */
+export interface ExistingSession {
+  id: string;
+  kind: SessionKind;
+  /** The stored enum: 'PULL', 'INCLINE_WALKING' and so on. */
+  label: string;
+  durationMinutes: number | null;
+  date: LocalDate;
+}
+
 export interface PreviewSession {
   kind: SessionKind;
   /** The opener's text as written, kept for the session's notes column. */
@@ -81,6 +91,12 @@ export interface PreviewRecord {
    */
   existingSessions: number;
   existingSessionsDate: LocalDate | null;
+  /**
+   * The live sessions already recorded on that date. A correction needs to name
+   * the row it replaces, so the reviewer can say "this 65-minute Pull replaces
+   * the 58-minute one" instead of the day quietly totalling 123 minutes.
+   */
+  existingSessionRows: ExistingSession[];
   /**
    * The date the two checks above were run against. The reviewer can move a
    * record to another day, at which point both become advisory - so the date is
@@ -127,6 +143,7 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
 
   const priorImports = new Map<string, { created_at: string; status: string }>();
   const priorSessions = new Map<string, number>();
+  const priorSessionRows = new Map<string, ExistingSession[]>();
 
   // Not being able to identify the user means neither check below runs at all,
   // which must read as "unknown", not as "no repeats and no existing sessions".
@@ -149,16 +166,49 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
   // warning at all.
   let sessionCheckFailed = userId === null && sessionDates.length > 0;
   if (userId && sessionDates.length > 0) {
+    // The rows themselves, not just how many: to offer "replace the 58-minute
+    // Pull already on this day" the review screen has to be able to name it.
+    // Superseded rows are already-corrected history and must not be offered.
     const [workouts, cardio] = await Promise.all([
-      supabase.from('workout_sessions').select('local_date').in('local_date', sessionDates),
-      supabase.from('cardio_sessions').select('local_date').in('local_date', sessionDates),
+      supabase
+        .from('workout_sessions')
+        .select('id, local_date, session_type, duration_minutes')
+        .is('superseded_at', null)
+        .in('local_date', sessionDates),
+      supabase
+        .from('cardio_sessions')
+        .select('id, local_date, cardio_type, duration_minutes')
+        .is('superseded_at', null)
+        .in('local_date', sessionDates),
     ]);
     // A count of zero from a failed query would silently withdraw the "this
     // adds to what is already there" warning, which is the one thing standing
     // between the user and a permanently doubled training day.
     if (workouts.error || cardio.error) sessionCheckFailed = true;
-    for (const row of [...(workouts.data ?? []), ...(cardio.data ?? [])]) {
+
+    for (const row of workouts.data ?? []) {
       priorSessions.set(row.local_date, (priorSessions.get(row.local_date) ?? 0) + 1);
+      const list = priorSessionRows.get(row.local_date) ?? [];
+      list.push({
+        id: row.id,
+        kind: 'WORKOUT',
+        label: String(row.session_type),
+        durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
+        date: row.local_date as LocalDate,
+      });
+      priorSessionRows.set(row.local_date, list);
+    }
+    for (const row of cardio.data ?? []) {
+      priorSessions.set(row.local_date, (priorSessions.get(row.local_date) ?? 0) + 1);
+      const list = priorSessionRows.get(row.local_date) ?? [];
+      list.push({
+        id: row.id,
+        kind: 'CARDIO',
+        label: String(row.cardio_type),
+        durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
+        date: row.local_date as LocalDate,
+      });
+      priorSessionRows.set(row.local_date, list);
     }
   }
 
@@ -201,6 +251,9 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
       previousImportDate,
       existingSessions,
       existingSessionsDate: existingSessions > 0 ? sessionDate : null,
+      existingSessionRows: record.sessions.length > 0
+        ? priorSessionRows.get(sessionDate) ?? []
+        : [],
       /** The date `alreadyImported` was checked against, which the reviewer may change. */
       checkedDate: sessionDate,
     });
@@ -249,7 +302,21 @@ const sessionSchema = z.object({
   maxHeartRate: optional('maxHeartRate'),
   sessionCalories: optional('sessionCalories'),
   hrZone: optionalInteger('hrZone'),
-});
+  /**
+   * What to do about a session already recorded on this day (spec §38).
+   *
+   *   ADD     - write it alongside; the day holds both. The default, and the
+   *             right answer for a second real session on one day.
+   *   REPLACE - write it and mark `supersedes` as superseded, so the day counts
+   *             the correction instead of summing the two readings.
+   *   KEEP    - write nothing; the session already on the day stands.
+   */
+  disposition: z.enum(['ADD', 'REPLACE', 'KEEP']).default('ADD'),
+  supersedes: z.string().uuid().nullable().default(null),
+}).refine(
+  (v) => v.disposition !== 'REPLACE' || v.supersedes !== null,
+  { message: 'Replacing a session needs the session it replaces.', path: ['supersedes'] },
+);
 
 /** The reviewed, user-edited values. All optional; blank stays blank. */
 const recordSchema = z.object({
@@ -472,6 +539,43 @@ export async function confirmImport(payload: ConfirmPayload): Promise<ImportResu
  */
 const SUMMED_TABLES = ['workout_sessions', 'cardio_sessions'] as const;
 
+/**
+ * Marks the rows a REPLACE supersedes (spec §6, §38).
+ *
+ * Runs AFTER the inserts, so the replacement exists before anything points at
+ * it and a failure here leaves the new row in place rather than a dangling
+ * reference. Nothing is deleted and nothing is overwritten: the replaced row
+ * keeps every measurement it recorded, and only stops counting towards the
+ * day's totals, which is what makes re-importing a corrected day produce 65
+ * minutes rather than 58 + 65.
+ *
+ * Returns an error message, or null when every supersession landed.
+ */
+async function supersede(
+  supabase: ActionClient,
+  table: 'workout_sessions' | 'cardio_sessions',
+  sessions: ConfirmSession[],
+  inserted: { id: string }[],
+): Promise<string | null> {
+  const now = new Date().toISOString();
+
+  for (const [index, session] of sessions.entries()) {
+    if (session.disposition !== 'REPLACE' || !session.supersedes) continue;
+    // Insert order matches the array order, so the nth new row replaces the
+    // nth session's target.
+    const replacement = inserted[index];
+    if (!replacement) {
+      return 'the replacement session could not be identified, so nothing was superseded.';
+    }
+    const { error } = await supabase
+      .from(table)
+      .update({ superseded_at: now, superseded_by: replacement.id })
+      .eq('id', session.supersedes);
+    if (error) return error.message;
+  }
+  return null;
+}
+
 /** True when the day carries at least one measurement or session. */
 function hasAnything(record: ConfirmRecord): boolean {
   if (record.sessions.length > 0) return true;
@@ -681,11 +785,17 @@ async function importOneRecord(
 
   // Training and cardio. The label the user wrote is preserved in notes, so a
   // session that mapped to OTHER has still lost nothing.
-  const workouts = values.sessions.filter((s) => s.kind === 'WORKOUT');
+  //
+  // A session the reviewer marked KEEP writes nothing at all: the row already
+  // on the day is the one they want, and importing over it would only make the
+  // day's minutes the sum of two readings of the same session.
+  const workouts = values.sessions.filter(
+    (s) => s.kind === 'WORKOUT' && s.disposition !== 'KEEP',
+  );
   if (workouts.length > 0 && alreadyWritten.has('workout_sessions')) {
     kept.push('workouts');
   } else if (workouts.length > 0) {
-    const { error } = await supabase.from('workout_sessions').insert(
+    const { data: inserted, error } = await supabase.from('workout_sessions').insert(
       workouts.map((session) => ({
         user_id: userId,
         local_date: date,
@@ -701,16 +811,23 @@ async function importOneRecord(
         source: 'IMPORT_TEXT' as const,
         import_id: importId,
       })),
-    );
+    ).select('id');
     if (error) return fail(`Workout: ${error.message}`);
     wrote.push({ table: 'workout_sessions', rows: workouts.length });
+
+    const failure = await supersede(
+      supabase, 'workout_sessions', workouts, inserted ?? [],
+    );
+    if (failure) return fail(`Workout: ${failure}`);
   }
 
-  const cardio = values.sessions.filter((s) => s.kind === 'CARDIO');
+  const cardio = values.sessions.filter(
+    (s) => s.kind === 'CARDIO' && s.disposition !== 'KEEP',
+  );
   if (cardio.length > 0 && alreadyWritten.has('cardio_sessions')) {
     kept.push('cardio sessions');
   } else if (cardio.length > 0) {
-    const { error } = await supabase.from('cardio_sessions').insert(
+    const { data: inserted, error } = await supabase.from('cardio_sessions').insert(
       cardio.map((session) => ({
         user_id: userId,
         local_date: date,
@@ -728,9 +845,14 @@ async function importOneRecord(
         source: 'IMPORT_TEXT' as const,
         import_id: importId,
       })),
-    );
+    ).select('id');
     if (error) return fail(`Cardio: ${error.message}`);
     wrote.push({ table: 'cardio_sessions', rows: cardio.length });
+
+    const failure = await supersede(
+      supabase, 'cardio_sessions', cardio, inserted ?? [],
+    );
+    if (failure) return fail(`Cardio: ${failure}`);
   }
 
   // Only now is the import a confirmed one. Until this update lands it stays

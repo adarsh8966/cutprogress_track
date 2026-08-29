@@ -15,6 +15,7 @@ const LINKS = [
   { href: '/nutrition', label: 'Nutrition' },
   { href: '/recovery', label: 'Recovery' },
   { href: '/review', label: 'Review' },
+  { href: '/quick', label: 'Quick entry' },
   { href: '/import', label: 'Import' },
   { href: '/context', label: 'Context' },
   { href: '/settings', label: 'Settings' },
@@ -25,14 +26,24 @@ export function Nav({ signOutAction }: { signOutAction: () => Promise<void> }) {
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-ground/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
+      <div className="mx-auto flex max-w-6xl items-center gap-x-4 px-5 py-2 sm:flex-wrap sm:gap-x-6 sm:py-3">
         <Link
           href="/dashboard"
-          className="text-sm font-medium tracking-[0.18em] text-ink"
+          className="inline-flex min-h-11 shrink-0 items-center text-sm font-medium tracking-[0.18em] text-ink sm:min-h-0"
         >
           CUT OS
         </Link>
-        <nav className="flex flex-wrap items-center gap-x-5 gap-y-1">
+        {/*
+          Ten links do not fit across a 320px phone. Wrapping them made three
+          cramped rows of 16px targets; scrolling the row sideways keeps one
+          line, keeps the order, and gives every link a full-height target.
+          On sm and up there is room to wrap as before.
+        */}
+        <nav
+          className="-mx-5 flex flex-1 items-center gap-x-5 overflow-x-auto px-5
+                     [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
+                     sm:mx-0 sm:flex-none sm:flex-wrap sm:gap-y-1 sm:overflow-visible sm:px-0"
+        >
           {LINKS.map((link) => {
             const active = pathname === link.href;
             return (
@@ -40,7 +51,7 @@ export function Nav({ signOutAction }: { signOutAction: () => Promise<void> }) {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? 'page' : undefined}
-                className={`text-xs transition-colors ${
+                className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap text-xs transition-colors sm:min-h-0 ${
                   active ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
                 }`}
               >
@@ -49,10 +60,10 @@ export function Nav({ signOutAction }: { signOutAction: () => Promise<void> }) {
             );
           })}
         </nav>
-        <form action={signOutAction} className="ml-auto">
+        <form action={signOutAction} className="shrink-0 sm:ml-auto">
           <button
             type="submit"
-            className="text-xs text-ink-faint transition-colors hover:text-ink-muted"
+            className="inline-flex min-h-11 items-center whitespace-nowrap text-xs text-ink-faint transition-colors hover:text-ink-muted sm:min-h-0"
           >
             Sign out
           </button>

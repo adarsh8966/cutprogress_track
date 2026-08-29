@@ -1,6 +1,11 @@
 # Context Pack format
 
-**Schema version 1.0** (`CONTEXT_VERSION` in `lib/context/generate.ts`).
+**Schema version 1.1** (`CONTEXT_VERSION` in `lib/context/generate.ts`).
+
+*1.1* splits TRAINING into a session-level block and an exercise-level one.
+Before it, the whole section was gated on there being working sets, so a
+period of sessions imported as summaries printed "No training sets logged"
+and nothing else — the pack implied no training where training had happened.
 
 Plain text, generated from live data, stored in `context_exports` with its
 version, content hash and the parameters in force when it was produced.
@@ -18,7 +23,8 @@ WEIGHT TREND                  rate, R², direction, confidence
 WAIST TREND
 NUTRITION                     targets, averages, days logged / missing
 ACTIVITY                      steps, zone 2, cardio and running totals
-TRAINING                      sessions, volume, RIR/RPE, sets per muscle group
+TRAINING                      sessions, time, HR, calories, by type; then
+                              working sets, volume, RIR/RPE, muscle groups
 RECOVERY                      sleep, resting HR, HRV, rest days
 ADHERENCE                     the seven components
 RECENT DETAIL (14 DAYS)       per-day table

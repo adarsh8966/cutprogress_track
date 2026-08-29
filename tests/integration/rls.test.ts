@@ -92,7 +92,6 @@ describe('row level security', () => {
     'metric_observations',
     'nutrition_logs',
     'sleep_records',
-    'cardio_sessions',
     'body_measurements',
   ])('grants no update or delete policy on %s', async (table) => {
     const { rows } = await db.query<{ cmd: string }>(
@@ -104,6 +103,33 @@ describe('row level security', () => {
     expect(commands).toContain('INSERT');
     expect(commands).not.toContain('UPDATE');
     expect(commands).not.toContain('DELETE');
+  });
+
+  /**
+   * cardio_sessions is the one observation table with an update policy, added
+   * in 0011 so a corrected import can mark the row it replaces as superseded.
+   * The policy alone would be too much power, so the privilege is granted per
+   * COLUMN: Postgres requires both, and the measurement columns are not in the
+   * grant. The measurement stays immutable; only the bookkeeping moves.
+   */
+  it('gives cardio_sessions an update policy scoped to the supersession columns', async () => {
+    const { rows } = await db.query<{ cmd: string }>(
+      `select cmd from pg_policies where tablename = 'cardio_sessions'`,
+    );
+    const commands = rows.map((r) => r.cmd);
+    expect(commands).toContain('SELECT');
+    expect(commands).toContain('INSERT');
+    expect(commands).toContain('UPDATE');
+    expect(commands).not.toContain('DELETE');
+
+    const { rows: grants } = await db.query<{ column_name: string }>(
+      `select column_name from information_schema.column_privileges
+        where table_name = 'cardio_sessions'
+          and grantee = 'authenticated'
+          and privilege_type = 'UPDATE'
+        order by column_name`,
+    );
+    expect(grants.map((g) => g.column_name)).toEqual(['superseded_at', 'superseded_by']);
   });
 
   it.each(['system_events', 'context_exports'])(

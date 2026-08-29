@@ -159,6 +159,23 @@ is *unscoreable*, not a zero.
 
 ## Training
 
+Training is measured on **two independent axes**, and they are never mixed.
+
+**Session level** (`summariseSessions`, from `workout_sessions`) — a session
+happened, for this long, at this heart rate, burning this much. True for every
+recorded session, including one imported as a summary. Average heart rate is
+weighted by duration, because a mean of session averages would let a 10-minute
+session count as much as a 90-minute one, and it is taken only over the sessions
+that reported one; the coverage is stated in the result's inputs.
+
+**Exercise level** (`summariseTraining`, from `workout_sets`) — what was
+performed inside a session. Volume, RIR, e1RM and progression all live here and
+are **absent, never zero**, when no sets were logged.
+
+A summary import carries the first and not the second, so nothing at the
+exercise level is ever derived from a session: a "Pull, 58 min" record cannot
+say which exercises were performed, and the system does not guess.
+
 **e1RM (Epley):** `w × (1 + reps/30)`. Brzycki (`w × 36/(37-reps)`) is
 implemented for cross-checking; the two agree within ~4% at 5 reps and diverge
 past 8%, so only Epley is reported.

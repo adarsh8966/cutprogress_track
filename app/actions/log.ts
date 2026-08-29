@@ -150,6 +150,10 @@ const metricSchema = z.object({
   date: dateSchema,
   steps: z.coerce.number().min(0).max(200000).optional().nullable(),
   activeCalories: z.coerce.number().min(0).max(10000).optional().nullable(),
+  // daily_metrics.total_calories_burned has existed since 0005 and resolves
+  // from this metric, which nothing wrote - so the column could never hold a
+  // value. This is its writer.
+  totalCaloriesBurned: z.coerce.number().min(0).max(20000).optional().nullable(),
   restingHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
   hrv: z.coerce.number().min(0).max(500).optional().nullable(),
 });
@@ -159,6 +163,7 @@ export async function logDailyMetrics(formData: FormData): Promise<ActionResult>
     date: formData.get('date'),
     steps: emptyToNull(formData.get('steps')),
     activeCalories: emptyToNull(formData.get('activeCalories')),
+    totalCaloriesBurned: emptyToNull(formData.get('totalCaloriesBurned')),
     restingHeartRate: emptyToNull(formData.get('restingHeartRate')),
     hrv: emptyToNull(formData.get('hrv')),
   });
@@ -170,6 +175,7 @@ export async function logDailyMetrics(formData: FormData): Promise<ActionResult>
     [
       ['STEPS', parsed.data.steps],
       ['ACTIVE_CALORIES', parsed.data.activeCalories],
+      ['TOTAL_CALORIES_BURNED', parsed.data.totalCaloriesBurned],
       ['RESTING_HEART_RATE', parsed.data.restingHeartRate],
       ['HRV_MS', parsed.data.hrv],
     ] as const
@@ -238,6 +244,10 @@ const cardioSchema = z.object({
   distance: z.coerce.number().min(0).max(500).optional().nullable(),
   hrZone: z.coerce.number().min(1).max(5).optional().nullable(),
   averageHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  // The importer has stored both of these since 0010. Logging by hand could
+  // not, so the same session recorded two ways kept different amounts of data.
+  maxHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  calories: z.coerce.number().min(0).max(20000).optional().nullable(),
 });
 
 export async function logCardio(formData: FormData): Promise<ActionResult> {
@@ -248,8 +258,13 @@ export async function logCardio(formData: FormData): Promise<ActionResult> {
     distance: emptyToNull(formData.get('distance')),
     hrZone: emptyToNull(formData.get('hrZone')),
     averageHeartRate: emptyToNull(formData.get('averageHeartRate')),
+    maxHeartRate: emptyToNull(formData.get('maxHeartRate')),
+    calories: emptyToNull(formData.get('calories')),
   });
   if (!parsed.success) return fieldErrors(parsed.error);
+
+  const hrError = heartRateOrder(parsed.data.averageHeartRate, parsed.data.maxHeartRate);
+  if (hrError) return hrError;
 
   const { supabase, userId } = await requireUser();
   const profile = await getProfile();
@@ -265,9 +280,9 @@ export async function logCardio(formData: FormData): Promise<ActionResult> {
         ? null
         : canonicalDistance(parsed.data.distance, profile?.distanceDisplayUnit ?? 'MI'),
     average_heart_rate: parsed.data.averageHeartRate ?? null,
-    max_heart_rate: null,
+    max_heart_rate: parsed.data.maxHeartRate ?? null,
     hr_zone: parsed.data.hrZone ?? null,
-    calories: null,
+    calories: parsed.data.calories ?? null,
     notes: null,
     source: 'MANUAL',
     import_id: null,
@@ -285,8 +300,24 @@ const workoutSchema = z.object({
     'UPPER', 'LOWER', 'PUSH', 'PULL', 'LEGS', 'FULL_BODY', 'CARDIO', 'OTHER',
   ]),
   duration: z.coerce.number().min(0).max(1440).optional().nullable(),
+  averageHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  maxHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  calories: z.coerce.number().min(0).max(20000).optional().nullable(),
   notes: z.string().max(1000).optional(),
 });
+
+/** Mirrors the *_hr_ordered CHECKs, as a field error rather than a DB message. */
+function heartRateOrder(
+  average: number | null | undefined,
+  max: number | null | undefined,
+): ActionResult | null {
+  if (average == null || max == null || max >= average) return null;
+  return {
+    ok: false,
+    message: 'Maximum heart rate cannot be below the average.',
+    errors: { maxHeartRate: 'Must be at least the average' },
+  };
+}
 
 export async function startWorkout(
   formData: FormData,
@@ -295,9 +326,15 @@ export async function startWorkout(
     date: formData.get('date'),
     sessionType: formData.get('sessionType'),
     duration: emptyToNull(formData.get('duration')),
+    averageHeartRate: emptyToNull(formData.get('averageHeartRate')),
+    maxHeartRate: emptyToNull(formData.get('maxHeartRate')),
+    calories: emptyToNull(formData.get('calories')),
     notes: formData.get('notes') ?? undefined,
   });
   if (!parsed.success) return fieldErrors(parsed.error);
+
+  const hrError = heartRateOrder(parsed.data.averageHeartRate, parsed.data.maxHeartRate);
+  if (hrError) return hrError;
 
   const { supabase, userId } = await requireUser();
   const { data, error } = await supabase
@@ -309,9 +346,9 @@ export async function startWorkout(
       end_time: null,
       duration_minutes: parsed.data.duration ?? null,
       session_type: parsed.data.sessionType,
-      average_heart_rate: null,
-      max_heart_rate: null,
-      calories: null,
+      average_heart_rate: parsed.data.averageHeartRate ?? null,
+      max_heart_rate: parsed.data.maxHeartRate ?? null,
+      calories: parsed.data.calories ?? null,
       notes: parsed.data.notes || null,
       completed: true,
       source: 'MANUAL',
@@ -325,6 +362,89 @@ export async function startWorkout(
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
   revalidatePath('/training');
   return { ok: true, message: 'Session started.', sessionId: data.id };
+}
+
+const updateSessionSchema = z.object({
+  sessionId: z.string().uuid(),
+  sessionType: z.enum([
+    'UPPER', 'LOWER', 'PUSH', 'PULL', 'LEGS', 'FULL_BODY', 'CARDIO', 'OTHER',
+  ]),
+  duration: z.coerce.number().min(0).max(1440).optional().nullable(),
+  averageHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  maxHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
+  calories: z.coerce.number().min(0).max(20000).optional().nullable(),
+  notes: z.string().max(1000).optional(),
+});
+
+/**
+ * Corrects a training session in place (spec §11).
+ *
+ * workout_sessions is an authored record, not an immutable observation - it is
+ * written over the course of a session and a figure gets corrected while it is
+ * still being logged - so 0008_rls.sql grants it update, and this is the write
+ * that uses it. Cardio has no equivalent: it is a closed observation, and a
+ * correction there is a new row that supersedes the old one.
+ *
+ * The date is deliberately not editable here. Moving a session to another day
+ * would leave the day it left behind holding a stale rollup, and the honest way
+ * to record the wrong day is a new session, not a silent move.
+ */
+export async function updateWorkoutSession(formData: FormData): Promise<ActionResult> {
+  const parsed = updateSessionSchema.safeParse({
+    sessionId: formData.get('sessionId'),
+    sessionType: formData.get('sessionType'),
+    duration: emptyToNull(formData.get('duration')),
+    averageHeartRate: emptyToNull(formData.get('averageHeartRate')),
+    maxHeartRate: emptyToNull(formData.get('maxHeartRate')),
+    calories: emptyToNull(formData.get('calories')),
+    notes: formData.get('notes') ?? undefined,
+  });
+  if (!parsed.success) return fieldErrors(parsed.error);
+
+  const values = parsed.data;
+  // Mirrors the workout_sessions_hr_ordered CHECK, so the user gets a field
+  // error rather than a database message.
+  if (
+    values.averageHeartRate != null &&
+    values.maxHeartRate != null &&
+    values.maxHeartRate < values.averageHeartRate
+  ) {
+    return {
+      ok: false,
+      message: 'Maximum heart rate cannot be below the average.',
+      errors: { maxHeartRate: 'Must be at least the average' },
+    };
+  }
+
+  const { supabase, userId } = await requireUser();
+
+  const { data: existing, error: readError } = await supabase
+    .from('workout_sessions')
+    .select('local_date')
+    .eq('id', values.sessionId)
+    .maybeSingle();
+  if (readError) return { ok: false, message: readError.message };
+  if (!existing) return { ok: false, message: 'That session no longer exists.' };
+
+  const { error } = await supabase
+    .from('workout_sessions')
+    .update({
+      session_type: values.sessionType,
+      duration_minutes: values.duration ?? null,
+      average_heart_rate: values.averageHeartRate ?? null,
+      max_heart_rate: values.maxHeartRate ?? null,
+      calories: values.calories ?? null,
+      notes: values.notes || null,
+    })
+    .eq('id', values.sessionId);
+  if (error) return { ok: false, message: error.message };
+
+  // The day's rollup is a pure function of the raw layer, so it has to be
+  // recomputed or the dashboard keeps showing the duration that was replaced.
+  await rebuildDailyMetrics(supabase, userId, existing.local_date as LocalDate);
+  revalidateAll();
+  revalidatePath(`/training/${values.sessionId}`);
+  return { ok: true, message: 'Session updated.' };
 }
 
 const setSchema = z.object({
@@ -374,6 +494,7 @@ export async function logSet(formData: FormData): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   revalidatePath('/training');
+  revalidatePath(`/training/${parsed.data.sessionId}`);
   return { ok: true, message: 'Set logged.' };
 }
 

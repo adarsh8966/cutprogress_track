@@ -3,7 +3,7 @@ import { generateContextPack, CONTEXT_VERSION, DETAIL_DAYS, monthlySummaries } f
 import { CHATGPT_INSTRUCTIONS } from '@/lib/context/instructions';
 import { table, line, percent, formatRate } from '@/lib/context/format';
 import {
-  FIXTURE_END, FIXTURE_PROFILE, fixtureDays, fixtureSets, fixtureCardio,
+  FIXTURE_END, FIXTURE_PROFILE, fixtureDays, fixtureSets, fixtureSessions, fixtureCardio,
 } from '../helpers/fixtures';
 
 const pack = generateContextPack({
@@ -11,6 +11,7 @@ const pack = generateContextPack({
   profile: FIXTURE_PROFILE,
   days: fixtureDays(),
   sets: fixtureSets(),
+  sessions: fixtureSessions(),
   cardio: fixtureCardio(),
 });
 
@@ -109,6 +110,7 @@ describe('Context Pack (spec §30-§33, §53)', () => {
       profile: FIXTURE_PROFILE,
       days: fixtureDays(),
       sets: fixtureSets(),
+      sessions: fixtureSessions(),
       cardio: fixtureCardio(),
       questions: ['Should I drop calories?'],
       recentEvents: [{ date: '2026-11-15', note: 'Travelled for three days.' }],
@@ -124,6 +126,7 @@ describe('Context Pack (spec §30-§33, §53)', () => {
       profile: FIXTURE_PROFILE,
       days: fixtureDays(),
       sets: fixtureSets(),
+      sessions: fixtureSessions(),
       cardio: fixtureCardio(),
     });
     expect(again.body).toBe(pack.body);
@@ -139,6 +142,7 @@ describe('Context Pack (spec §30-§33, §53)', () => {
       profile: FIXTURE_PROFILE,
       days: [],
       sets: [],
+      sessions: [],
       cardio: [],
     });
     expect(empty.body).toContain('FITNESS CONTEXT PACK');

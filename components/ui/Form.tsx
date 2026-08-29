@@ -47,7 +47,7 @@ export function ActionForm({
         <button
           type="submit"
           disabled={pending}
-          className="rounded border border-line-strong px-4 py-1.5 text-sm transition-colors hover:border-accent disabled:opacity-40"
+          className="min-h-11 rounded border border-line-strong px-5 text-sm transition-colors hover:border-accent disabled:opacity-40"
         >
           {pending ? 'Saving…' : submitLabel}
         </button>
@@ -89,8 +89,12 @@ export function Field({
   );
 }
 
+// min-h-11 is the comfortable touch target (44px). A 36px input is fine with a
+// mouse and fiddly on a phone, and this app is used on one most nights.
+// text-base on small screens also stops iOS zooming the page on focus.
 const INPUT_CLASS =
-  'w-full rounded border border-line bg-ground px-3 py-2 text-sm outline-none focus:border-accent';
+  'w-full min-h-11 rounded border border-line bg-ground px-3 py-2 text-base ' +
+  'outline-none focus:border-accent sm:text-sm';
 
 export function NumberField({
   name,

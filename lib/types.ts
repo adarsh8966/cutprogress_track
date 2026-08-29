@@ -112,6 +112,7 @@ export interface DailyMetrics {
   carbsG: number | null;
   fatG: number | null;
   fiberG: number | null;
+  fruitVegServings: number | null;
 
   trainingSessions: number | null;
 }

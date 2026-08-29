@@ -52,7 +52,9 @@ export default async function NutritionPage() {
       carbsG: todayRow?.carbsG ?? null,
       fatG: todayRow?.fatG ?? null,
       fiberG: todayRow?.fiberG ?? null,
-      fruitVegServings: null,
+      // Was hard-coded null while the form offered the field and the score
+      // weighted it 10 of 100, so logging it could never change the score.
+      fruitVegServings: todayRow?.fruitVegServings ?? null,
       logged: todayRow?.caloriesConsumed != null || todayRow?.proteinG != null,
     },
     profile.targets,
@@ -95,7 +97,7 @@ export default async function NutritionPage() {
               unit="g"
               overIsFine
             />
-            <div className="grid grid-cols-2 gap-4 border-t border-line pt-4">
+            <div className="grid grid-cols-2 gap-4 border-t border-line pt-4 sm:grid-cols-3">
               <Figure
                 label="Carbohydrate"
                 value={todayRow?.carbsG == null ? null : formatNumber(todayRow.carbsG)}
@@ -106,6 +108,16 @@ export default async function NutritionPage() {
                 label="Fat"
                 value={todayRow?.fatG == null ? null : formatNumber(todayRow.fatG)}
                 unit="g"
+                size="sm"
+              />
+              <Figure
+                label="Fruit + veg"
+                value={
+                  todayRow?.fruitVegServings == null
+                    ? null
+                    : formatNumber(todayRow.fruitVegServings)
+                }
+                unit="servings"
                 size="sm"
               />
             </div>

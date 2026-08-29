@@ -26,6 +26,20 @@ that supersedes the old one by source priority and recency.
 because a workout is authored over the course of a session and a rep count gets
 corrected mid-set. They still permit no delete.
 
+**Supersession** (`0011`). `daily_metrics` sums a day's sessions rather than
+resolving them, so re-importing a day to correct a duration used to make it the
+total of both readings — 58 + 65 = 123 minutes. Both session tables now carry
+`superseded_at` / `superseded_by`: a correction is a NEW row, exactly as
+elsewhere in the raw layer, and the row it replaces is marked rather than
+touched. Aggregates and every read count only rows where `superseded_at is
+null`, so the day totals 65; nothing is deleted and the replaced observation
+keeps every value it recorded.
+
+`cardio_sessions` stays an immutable observation. Its update privilege is
+granted **per column** — `superseded_at` and `superseded_by` only — so a
+`duration_minutes` rewrite is refused outright by Postgres. RLS and the column
+grant are both required, and both are tested.
+
 ## Canonical
 
 `daily_metrics` — one resolved row per user per local date. Every measurement
@@ -111,6 +125,20 @@ import whose raw text was preserved but whose data did not land — visible in t
 list on `/import`.
 
 ## What the importer writes
+
+Per session, the review screen offers **ADD / REPLACE / KEEP**. ADD is the
+default and the old behaviour; REPLACE writes the new row and supersedes the one
+it names; KEEP writes nothing for that session.
+
+## Where session data is read
+
+`workout_sessions` is read by `getWorkoutSessions` (Training, and the
+`/training/[sessionId]` detail page) and by `rebuildDailyMetrics`. Before that
+query existed, the Training page's only training read was `getLoggedSets`, which
+selects from `workout_sets` and inner-joins upward — so a session with no sets
+produced no rows and an imported workout was invisible on the page named after
+it, while still being counted in `daily_metrics`, adherence and the Context
+Pack. Session-level and exercise-level reads are separate and both are wired.
 
 `app/actions/import.ts` fans one confirmed day out across the raw layer:
 `body_measurements`, `nutrition_logs`, `metric_observations`, `sleep_records`,

@@ -22,7 +22,7 @@ export interface ContextResult {
 
 /** Builds the pack without storing it, for preview. */
 export async function buildContextPack(): Promise<ContextResult> {
-  const { profile, end, metrics, sets, cardio } = await getAnalyticsWindow();
+  const { profile, end, metrics, sets, sessions, cardio } = await getAnalyticsWindow();
   if (metrics.length === 0) {
     return {
       ok: false,
@@ -37,6 +37,7 @@ export async function buildContextPack(): Promise<ContextResult> {
     profile: profile ?? DEFAULT_PROFILE,
     days: metrics,
     sets,
+    sessions,
     cardio: cardio.map((c) => ({
       date: c.date,
       type: c.type,

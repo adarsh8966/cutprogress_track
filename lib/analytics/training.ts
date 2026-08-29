@@ -28,6 +28,158 @@ export interface LoggedSet {
   warmup: boolean;
 }
 
+/**
+ * A training session as it was recorded: the fact that it happened, and the
+ * intensity figures a summary carries. NOT what was done inside it.
+ *
+ * This is the second of the two training measurements, and it is deliberately
+ * separate from LoggedSet. A pasted summary - "Workout: Pull, 58 min, avg HR
+ * 142, max HR 171, 412 kcal" - says a Pull session happened and how hard it
+ * was. It says nothing about which exercises were performed or for how many
+ * sets, and no amount of processing can recover that. So this type has no
+ * exercise, no reps, no weight and no RIR: the fields do not exist rather than
+ * being null, because a session-level record cannot answer those questions
+ * even in principle.
+ */
+export interface TrainingSession {
+  id: string;
+  date: LocalDate;
+  sessionType: string;
+  durationMinutes: number | null;
+  averageHeartRate: number | null;
+  maxHeartRate: number | null;
+  calories: number | null;
+  notes: string | null;
+  source: string;
+  completed: boolean;
+  importId: string | null;
+}
+
+export interface SessionTypeCount {
+  sessionType: string;
+  sessions: number;
+  minutes: number | null;
+}
+
+export interface SessionSummary {
+  totalSessions: number;
+  totalMinutes: number | null;
+  byType: SessionTypeCount[];
+  /** Duration-weighted, across the sessions that reported an average. */
+  averageHeartRate: number | null;
+  maxHeartRate: number | null;
+  totalCalories: number | null;
+  /** How many of these sessions have exercise-level detail attached. */
+  sessionsWithSets: number;
+  sessionsWithoutSets: number;
+}
+
+/**
+ * Counts and totals the sessions themselves (spec §11, §12).
+ *
+ * Every figure here is either measured or absent. A session that did not report
+ * a duration contributes to the count and not to the minutes; a day of sessions
+ * that all lack heart rates reports a null average rather than a number derived
+ * from the ones that happen to have it. The coverage behind each figure is put
+ * in `inputs` so the Evidence panel can show what the average was actually
+ * taken over.
+ *
+ * `sets` is read ONLY to say which sessions have exercise detail. No set is
+ * ever invented for a session that has none, and no session-level figure is
+ * ever derived from a set.
+ */
+export function summariseSessions(
+  sessions: TrainingSession[],
+  sets: LoggedSet[] = [],
+): Derived<SessionSummary> {
+  const completed = sessions.filter((s) => s.completed);
+  const sessionIdsWithSets = new Set(sets.map((s) => s.sessionId));
+
+  const withDuration = completed.filter((s) => s.durationMinutes !== null);
+  const totalMinutes = withDuration.length
+    ? roundTo(withDuration.reduce((total, s) => total + s.durationMinutes!, 0), 1)
+    : null;
+
+  // A mean of session averages would weight a 10-minute session the same as a
+  // 90-minute one. Weighting by duration is the honest aggregate; sessions
+  // with an HR but no duration fall back to an unweighted contribution rather
+  // than being dropped.
+  const withHr = completed.filter((s) => s.averageHeartRate !== null);
+  const hrWeight = (s: TrainingSession) => s.durationMinutes ?? 1;
+  const hrWeightTotal = withHr.reduce((total, s) => total + hrWeight(s), 0);
+  const averageHeartRate =
+    withHr.length && hrWeightTotal > 0
+      ? roundTo(
+          withHr.reduce((total, s) => total + s.averageHeartRate! * hrWeight(s), 0) /
+            hrWeightTotal,
+          1,
+        )
+      : null;
+
+  const maxima = completed.map((s) => s.maxHeartRate).filter((v): v is number => v !== null);
+  const calories = completed.map((s) => s.calories).filter((v): v is number => v !== null);
+
+  const byTypeMap = new Map<string, { sessions: number; minutes: number[] }>();
+  for (const session of completed) {
+    const entry = byTypeMap.get(session.sessionType) ?? { sessions: 0, minutes: [] };
+    entry.sessions += 1;
+    if (session.durationMinutes !== null) entry.minutes.push(session.durationMinutes);
+    byTypeMap.set(session.sessionType, entry);
+  }
+  const byType: SessionTypeCount[] = [...byTypeMap.entries()]
+    .map(([sessionType, entry]) => ({
+      sessionType,
+      sessions: entry.sessions,
+      minutes: entry.minutes.length
+        ? roundTo(entry.minutes.reduce((a, b) => a + b, 0), 1)
+        : null,
+    }))
+    .sort((a, b) => b.sessions - a.sessions || a.sessionType.localeCompare(b.sessionType));
+
+  const withSets = completed.filter((s) => sessionIdsWithSets.has(s.id)).length;
+
+  const summary: SessionSummary = {
+    totalSessions: completed.length,
+    totalMinutes,
+    byType,
+    averageHeartRate,
+    maxHeartRate: maxima.length ? Math.max(...maxima) : null,
+    totalCalories: calories.length ? roundTo(calories.reduce((a, b) => a + b, 0), 1) : null,
+    sessionsWithSets: withSets,
+    sessionsWithoutSets: completed.length - withSets,
+  };
+
+  const notes: string[] = [];
+  if (summary.sessionsWithoutSets > 0) {
+    notes.push(
+      `${summary.sessionsWithoutSets} of ${completed.length} session` +
+        `${completed.length === 1 ? '' : 's'} ${summary.sessionsWithoutSets === 1 ? 'has' : 'have'}` +
+        ' no exercise or set detail. Volume, RIR and progression are not computed for those.',
+    );
+  }
+  if (withHr.length > 0 && withHr.length < completed.length) {
+    notes.push(`Average heart rate covers ${withHr.length} of ${completed.length} sessions.`);
+  }
+  if (completed.length < sessions.length) {
+    notes.push(`${sessions.length - completed.length} planned session(s) were not completed.`);
+  }
+
+  return derived(
+    summary,
+    'Training sessions',
+    {
+      sessionCount: completed.length,
+      plannedNotCompleted: sessions.length - completed.length,
+      sessionsReportingDuration: withDuration.length,
+      sessionsReportingAverageHr: withHr.length,
+      sessionsReportingCalories: calories.length,
+      sessionsWithExerciseDetail: withSets,
+    },
+    completed.length > 0 ? 'HIGH' : 'INSUFFICIENT',
+    completed.length === 0 ? ['No training sessions recorded in this period.'] : notes,
+  );
+}
+
 export function epley1rm(weightKg: number, reps: number): number {
   if (reps <= 0) return 0;
   if (reps === 1) return weightKg;

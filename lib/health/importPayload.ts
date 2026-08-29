@@ -166,10 +166,21 @@ export interface EditState {
    * unfixable session blocks the whole paste.
    */
   removed: Record<string, boolean>;
+  /**
+   * Per session, what to do about one already recorded on the same day, keyed
+   * by sessionTypePath. Absent means ADD, which is what the importer has always
+   * done and stays the default.
+   */
+  dispositions: Record<string, SessionDisposition>;
+  /** The existing session id a REPLACE targets, by sessionTypePath. */
+  supersedes: Record<string, string>;
 }
 
 export function emptyEdits(): EditState {
-  return { dates: [], values: {}, canonical: {}, dirty: {}, types: {}, removed: {} };
+  return {
+    dates: [], values: {}, canonical: {}, dirty: {}, types: {}, removed: {},
+    dispositions: {}, supersedes: {},
+  };
 }
 
 /** Rounds for display without pretending to more precision than was read. */
@@ -216,6 +227,8 @@ export interface PayloadRecord {
   targetDate: string | null;
 }
 
+export type SessionDisposition = 'ADD' | 'REPLACE' | 'KEEP';
+
 export interface ConfirmSessionValues {
   kind: SessionKind;
   sessionType: SessionTypeEnum;
@@ -227,6 +240,10 @@ export interface ConfirmSessionValues {
   maxHeartRate: number | null;
   sessionCalories: number | null;
   hrZone: number | null;
+  /** What to do about a session already on this day. See app/actions/import.ts. */
+  disposition: SessionDisposition;
+  /** The session REPLACE supersedes. Null for ADD and KEEP. */
+  supersedes: string | null;
 }
 
 export type ConfirmRecordValues =
@@ -288,7 +305,9 @@ export function buildConfirmPayload(
             ? canonicalValue(sessionPath(r, s, key), sessionFieldRow(key, units), edits)
             : null;
 
-        const chosen = edits.types[sessionTypePath(r, s)];
+        const typePath = sessionTypePath(r, s);
+        const chosen = edits.types[typePath];
+        const disposition = edits.dispositions[typePath] ?? 'ADD';
         return [{
           kind: session.kind,
           sessionType: (session.kind === 'WORKOUT' && chosen
@@ -302,6 +321,8 @@ export function buildConfirmPayload(
           maxHeartRate: read('maxHeartRate'),
           sessionCalories: read('sessionCalories'),
           hrZone: read('hrZone'),
+          disposition,
+          supersedes: disposition === 'REPLACE' ? edits.supersedes[typePath] ?? null : null,
         }];
       });
 
@@ -335,11 +356,27 @@ export function summariseWrites(record: ConfirmRecordValues): string[] {
 
   if (record.sleepMinutes != null) parts.push('1 sleep record');
 
-  const workouts = record.sessions.filter((s) => s.kind === 'WORKOUT').length;
+  // A session the reviewer chose to KEEP writes nothing, so it must not be
+  // counted here: the line is a promise about what confirming will do.
+  const writing = record.sessions.filter((s) => s.disposition !== 'KEEP');
+
+  const workouts = writing.filter((s) => s.kind === 'WORKOUT').length;
   if (workouts > 0) parts.push(`${workouts} workout${workouts === 1 ? '' : 's'}`);
 
-  const cardio = record.sessions.filter((s) => s.kind === 'CARDIO').length;
+  const cardio = writing.filter((s) => s.kind === 'CARDIO').length;
   if (cardio > 0) parts.push(`${cardio} cardio session${cardio === 1 ? '' : 's'}`);
+
+  const replacing = writing.filter((s) => s.disposition === 'REPLACE').length;
+  if (replacing > 0) {
+    parts.push(
+      `replacing ${replacing} existing session${replacing === 1 ? '' : 's'}`,
+    );
+  }
+
+  const keeping = record.sessions.length - writing.length;
+  if (keeping > 0) {
+    parts.push(`keeping ${keeping} existing session${keeping === 1 ? '' : 's'} as recorded`);
+  }
 
   return parts;
 }
