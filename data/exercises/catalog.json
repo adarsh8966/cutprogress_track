@@ -1,0 +1,1593 @@
+[
+  {
+    "exerciseId": "ab-wheel-rollout",
+    "name": "Ab Wheel Rollout",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "barbell-back-squat",
+    "name": "Barbell Back Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Barbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "barbell-deadlift",
+    "name": "Barbell Deadlift",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Barbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris",
+      "Glutes",
+      "Erectors"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "barbell-row",
+    "name": "Barbell Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Barbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Lats"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "bayesian-cable-curl",
+    "name": "Bayesian Cable Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "bench-dip",
+    "name": "Bench Dip",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "bulgarian-split-squat",
+    "name": "Bulgarian Split Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-chest-press",
+    "name": "Cable Chest Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-crunch",
+    "name": "Cable Crunch",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-curl",
+    "name": "Cable Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Brachii"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-face-pull",
+    "name": "Cable Face Pull",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rear Delts",
+      "Mid Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-flye",
+    "name": "Cable Flye",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-hammer-curl",
+    "name": "Cable Hammer Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Brachialis",
+      "Brachioradialis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-hip-abduction",
+    "name": "Cable Hip Abduction",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Medius"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-kickback",
+    "name": "Cable Kickback",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Maximus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-lateral-raise",
+    "name": "Cable Lateral Raise",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Side Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-pull-through",
+    "name": "Cable Pull-Through",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Glutes",
+      "Biceps Femoris"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-pullover",
+    "name": "Cable Pullover",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-reverse-flye",
+    "name": "Cable Reverse Flye",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rear Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-row",
+    "name": "Cable Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Rhomboids",
+      "Lats"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-shrug",
+    "name": "Cable Shrug",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Upper Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-triceps-pushdown",
+    "name": "Cable Triceps Pushdown",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lateral Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-upright-row",
+    "name": "Cable Upright Row",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Side Delts",
+      "Upper Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-woodchop",
+    "name": "Cable Woodchop",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Obliques"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cable-wrist-curl",
+    "name": "Cable Wrist Curl",
+    "primaryMuscleGroup": "Forearms",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Wrist Flexors"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "chest-supported-dumbbell-row",
+    "name": "Chest-Supported Dumbbell Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Rhomboids"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "chest-supported-row",
+    "name": "Chest-Supported Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Rhomboids"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "chin-up",
+    "name": "Chin-Up",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "close-grip-smith-machine-press",
+    "name": "Close-Grip Smith Machine Press",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Triceps",
+      "Sternal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "concentration-curl",
+    "name": "Concentration Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Brachii"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "cross-body-cable-extension",
+    "name": "Cross-Body Cable Extension",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dead-bug",
+    "name": "Dead Bug",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Transverse Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "deficit-push-up",
+    "name": "Deficit Push-Up",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dip",
+    "name": "Dip",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Costal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-bench-press",
+    "name": "Dumbbell Bench Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-curl",
+    "name": "Dumbbell Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Brachii"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-flye",
+    "name": "Dumbbell Flye",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-front-raise",
+    "name": "Dumbbell Front Raise",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Front Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-hip-thrust",
+    "name": "Dumbbell Hip Thrust",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Maximus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-incline-press",
+    "name": "Dumbbell Incline Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Clavicular Pectoralis",
+      "Front Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-kickback",
+    "name": "Dumbbell Kickback",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lateral Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-lateral-raise",
+    "name": "Dumbbell Lateral Raise",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Side Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-lunge",
+    "name": "Dumbbell Lunge",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-overhead-extension",
+    "name": "Dumbbell Overhead Extension",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-overhead-press",
+    "name": "Dumbbell Overhead Press",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Front Delts",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-reverse-flye",
+    "name": "Dumbbell Reverse Flye",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rear Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-reverse-wrist-curl",
+    "name": "Dumbbell Reverse Wrist Curl",
+    "primaryMuscleGroup": "Forearms",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Wrist Extensors"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-shrug",
+    "name": "Dumbbell Shrug",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Upper Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-side-bend",
+    "name": "Dumbbell Side Bend",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Obliques"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-skull-crusher",
+    "name": "Dumbbell Skull Crusher",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "dumbbell-wrist-curl",
+    "name": "Dumbbell Wrist Curl",
+    "primaryMuscleGroup": "Forearms",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Wrist Flexors"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "farmers-carry",
+    "name": "Farmer’s Carry",
+    "primaryMuscleGroup": "Forearms",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Grip",
+      "Upper Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "glute-bridge",
+    "name": "Glute Bridge",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Maximus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "goblet-squat",
+    "name": "Goblet Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "hack-squat",
+    "name": "Hack Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Rectus Femoris"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "hammer-curl",
+    "name": "Hammer Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Brachialis",
+      "Brachioradialis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "hanging-knee-raise",
+    "name": "Hanging Knee Raise",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lower Rectus Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "hanging-leg-raise",
+    "name": "Hanging Leg Raise",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lower Rectus Abdominis",
+      "Hip Flexors"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "high-to-low-cable-flye",
+    "name": "High-to-Low Cable Flye",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Costal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "hip-thrust",
+    "name": "Hip Thrust",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Barbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Maximus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "incline-dumbbell-curl",
+    "name": "Incline Dumbbell Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "incline-dumbbell-flye",
+    "name": "Incline Dumbbell Flye",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Clavicular Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "inverted-row",
+    "name": "Inverted Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Rhomboids"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "lat-pulldown",
+    "name": "Lat Pulldown",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "leaning-cable-lateral-raise",
+    "name": "Leaning Cable Lateral Raise",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Side Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "leg-extension",
+    "name": "Leg Extension",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Femoris",
+      "Vastus Medialis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "leg-press",
+    "name": "Leg Press",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "low-to-high-cable-flye",
+    "name": "Low-to-High Cable Flye",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Clavicular Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "lying-leg-curl",
+    "name": "Lying Leg Curl",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "machine-chest-press",
+    "name": "Machine Chest Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "machine-crunch",
+    "name": "Machine Crunch",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "machine-lateral-raise",
+    "name": "Machine Lateral Raise",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Side Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "neutral-grip-pull-up",
+    "name": "Neutral-Grip Pull-Up",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "neutral-grip-pulldown",
+    "name": "Neutral-Grip Pulldown",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "nordic-curl",
+    "name": "Nordic Curl",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "overhead-cable-triceps-extension",
+    "name": "Overhead Cable Triceps Extension",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Long Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "pallof-press",
+    "name": "Pallof Press",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Obliques",
+      "Transverse Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "pec-deck",
+    "name": "Pec Deck",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "plank",
+    "name": "Plank",
+    "primaryMuscleGroup": "Core",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Abdominis",
+      "Transverse Abdominis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "preacher-curl",
+    "name": "Preacher Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Short Head Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "pull-up",
+    "name": "Pull-Up",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "push-up",
+    "name": "Push-Up",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "reverse-curl",
+    "name": "Reverse Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Brachioradialis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "reverse-lunge",
+    "name": "Reverse Lunge",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Glutes",
+      "Vastus Lateralis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "reverse-pec-deck",
+    "name": "Reverse Pec Deck",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rear Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "romanian-deadlift",
+    "name": "Romanian Deadlift",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "rope-triceps-pushdown",
+    "name": "Rope Triceps Pushdown",
+    "primaryMuscleGroup": "Triceps",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lateral Head Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "rowing-machine",
+    "name": "Rowing Machine",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular",
+      "Mid Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "seal-row",
+    "name": "Seal Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Barbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Rhomboids"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "seated-calf-raise",
+    "name": "Seated Calf Raise",
+    "primaryMuscleGroup": "Calves",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Soleus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "seated-dumbbell-press",
+    "name": "Seated Dumbbell Press",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Front Delts",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "seated-leg-curl",
+    "name": "Seated Leg Curl",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris",
+      "Semitendinosus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "single-arm-dumbbell-row",
+    "name": "Single-Arm Dumbbell Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Mid Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "single-leg-calf-raise",
+    "name": "Single-Leg Calf Raise",
+    "primaryMuscleGroup": "Calves",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gastrocnemius"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "single-leg-romanian-deadlift",
+    "name": "Single-Leg Romanian Deadlift",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "sissy-squat",
+    "name": "Sissy Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Bodyweight",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Femoris"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-bench-press",
+    "name": "Smith Machine Bench Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Sternal Pectoralis",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-bulgarian-split-squat",
+    "name": "Smith Machine Bulgarian Split Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-calf-raise",
+    "name": "Smith Machine Calf Raise",
+    "primaryMuscleGroup": "Calves",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gastrocnemius"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-front-squat",
+    "name": "Smith Machine Front Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Rectus Femoris",
+      "Vastus Medialis"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-hip-thrust",
+    "name": "Smith Machine Hip Thrust",
+    "primaryMuscleGroup": "Glutes",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gluteus Maximus"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-incline-press",
+    "name": "Smith Machine Incline Press",
+    "primaryMuscleGroup": "Chest",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Clavicular Pectoralis",
+      "Front Delts"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-overhead-press",
+    "name": "Smith Machine Overhead Press",
+    "primaryMuscleGroup": "Shoulders",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Front Delts",
+      "Triceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-romanian-deadlift",
+    "name": "Smith Machine Romanian Deadlift",
+    "primaryMuscleGroup": "Hamstrings",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Biceps Femoris",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-row",
+    "name": "Smith Machine Row",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Mid Traps",
+      "Lats"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-shrug",
+    "name": "Smith Machine Shrug",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Upper Traps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "smith-machine-squat",
+    "name": "Smith Machine Squat",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Smith Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "spider-curl",
+    "name": "Spider Curl",
+    "primaryMuscleGroup": "Biceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Short Head Biceps"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "stair-climber",
+    "name": "Stair Climber",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "standing-dumbbell-calf-raise",
+    "name": "Standing Dumbbell Calf Raise",
+    "primaryMuscleGroup": "Calves",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Gastrocnemius"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "stationary-bike",
+    "name": "Stationary Bike",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Machine",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": false
+  },
+  {
+    "exerciseId": "step-up",
+    "name": "Step-Up",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "straight-arm-pulldown",
+    "name": "Straight-Arm Pulldown",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "treadmill-incline-walk",
+    "name": "Treadmill Incline Walk",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Treadmill",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "treadmill-run",
+    "name": "Treadmill Run",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Treadmill",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "treadmill-walk",
+    "name": "Treadmill Walk",
+    "primaryMuscleGroup": "Cardio",
+    "equipment": "Treadmill",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Cardiovascular"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "walking-lunge",
+    "name": "Walking Lunge",
+    "primaryMuscleGroup": "Quadriceps",
+    "equipment": "Dumbbell",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Vastus Lateralis",
+      "Glutes"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  },
+  {
+    "exerciseId": "wide-grip-pulldown",
+    "name": "Wide-Grip Pulldown",
+    "primaryMuscleGroup": "Back",
+    "equipment": "Cable",
+    "nippardTier": null,
+    "muscleSubgroups": [
+      "Lats",
+      "Teres Major"
+    ],
+    "demonstrationUrl": null,
+    "active": true,
+    "apartmentGym": true
+  }
+]

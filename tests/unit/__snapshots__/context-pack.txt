@@ -1,0 +1,239 @@
+====================================================
+FITNESS CONTEXT PACK
+====================================================
+Generated: 2026-11-20
+Context version: 1.0
+Analytics version: 0.1.0
+
+PURPOSE:
+Provide ChatGPT with the current state of the user's fitness
+journey for analysis and coaching.
+
+INSTRUCTIONS FOR CHATGPT
+
+This context pack contains measured and derived fitness data.
+
+Do not assume missing values. A field marked "not logged" was not
+measured. It is not zero, and it should not be estimated or filled in.
+
+Distinguish between:
+- measured data      (recorded by the user or a device)
+- imported data      (parsed from a pasted report, then user-confirmed)
+- estimated data     (computed by a documented formula)
+- model predictions  (projections with stated uncertainty)
+- recommendations    (candidates for the user to decide on)
+
+When evaluating progress:
+1. prioritise trends over single-day measurements
+2. consider data completeness before drawing conclusions - the
+   DATA QUALITY section states how much of the picture is actually there
+3. use waist, weight and adherence together, not weight alone
+4. do not recommend changes solely because of short-term fluctuations
+5. explain the evidence behind any recommendation you make
+
+The application performs measurement and deterministic analysis. It does
+not attempt to coach. Interpretation and coaching decisions are yours.
+
+DATA QUALITY
+----------------------------------------------------
+DATA QUALITY: 89/100 (HIGH confidence)
+
+Input              Coverage  Days  Points
+-----------------  --------  ----  --------
+Weight logging     82%       23    20.54/25
+Nutrition logging  75%       21    18.75/25
+Training logging   100%      28    15/15
+Steps              100%      28    15/15
+Sleep              100%      28    10/10
+Waist              14%       4     10/10
+
+USER PROFILE
+----------------------------------------------------
+- Height: 70.0 in
+- Sex: MALE
+- Timezone: America/New_York
+- Phase: CUT
+- Starting weight: 205.0 lb
+- Target weight: 180.0 lb
+- Cut start date: 2026-08-28
+- Self-imposed max loss rate: 1% of bodyweight/week
+
+GOALS AND TARGETS
+----------------------------------------------------
+- Daily calories: 1,950 kcal
+- Daily protein: 145 g
+- Daily fibre: 30 g
+- Daily steps: 10,000
+- Training sessions: 5 per week
+- Cardio: 150 minutes per week
+
+CURRENT STATE
+----------------------------------------------------
+- Latest weight measurement: 185.3 lb on 2026-11-20
+- 7-day average weight: 185.4 lb [confidence: moderate]
+- 14-day average weight: 185.7 lb [confidence: high]
+- 30-day average weight: 187.0 lb [confidence: moderate]
+- Total change from start: -19.65 lb
+- Remaining to target: 5.4 lb
+- Latest waist measurement: 34.5 in on 2026-11-20
+
+WEIGHT TREND
+----------------------------------------------------
+- Rate of change: -1.06 lb/week
+- Fit quality (R²): 0.83
+- Days with a measurement: 23
+- Confidence: HIGH
+- Rate direction: SLOWING (recent -0.50 lb/wk vs earlier -1.09 lb/wk)
+
+WAIST TREND
+----------------------------------------------------
+- Rate of change: -0.06 in/week
+- Measurements used: 12 over 84 days
+- Confidence: MODERATE
+
+NUTRITION
+----------------------------------------------------
+- Calorie target: 1,950 kcal
+- 7-day average calories: 2,001 kcal [confidence: low]
+- 14-day average calories: 1,993 kcal [confidence: moderate]
+- 30-day average calories: 1,988 kcal [confidence: moderate]
+- Protein target: 145 g
+- 30-day average protein: 143 g [confidence: moderate]
+- 30-day average carbohydrate: 212 g [confidence: moderate]
+- 30-day average fat: 64 g [confidence: moderate]
+- 30-day average fibre: 30 g [confidence: moderate]
+- Days logged (last 30): 22 of 30
+- Days missing (last 30): 8 of 30
+
+ACTIVITY
+----------------------------------------------------
+- Step target: 10,000
+- 7-day average steps: 9,852 [confidence: high]
+- 14-day average steps: 10,049 [confidence: high]
+- 30-day average steps: 10,212 [confidence: high]
+- Zone 2 minutes (last 28 days): 251 min
+- Cardio sessions (last 28 days): 8
+- Running sessions (last 28 days): 4
+- Running distance (last 28 days): 12.4 mi
+- Active calories (30-day average): 517 kcal
+
+TRAINING
+----------------------------------------------------
+- Sessions target: 5 per week
+- Sessions completed (period): 20
+- Working sets (period): 60
+- Total volume (period): 58,981 lb
+- Average RIR: 2
+- Average RPE: 8
+- Training adherence: 100% [confidence: high]
+
+Sets per muscle group (period):
+Muscle group  Sets  Sessions
+------------  ----  --------
+Back          15    5
+Chest         15    5
+Shoulders     15    5
+Quadriceps    15    5
+
+RECOVERY
+----------------------------------------------------
+- 7-day average sleep: 7h 37m [confidence: high]
+- 30-day average sleep: 7h 23m [confidence: high]
+- 30-day average resting heart rate: 59 bpm [confidence: high]
+- 30-day average HRV: 59 ms [confidence: high]
+- Rest days (last 28): 8
+  Note: recovery data is informational. Poor sleep alone is not a reason to skip training.
+
+ADHERENCE
+----------------------------------------------------
+- Calorie adherence: 96% [confidence: moderate]
+- Protein adherence: 97% [confidence: moderate]
+- Step adherence: 98% [confidence: high]
+- Training adherence: 100% [confidence: high]
+- Cardio adherence: 54% [confidence: high]
+- Logging adherence: 79% [confidence: moderate]
+- Overall adherence: 87% [confidence: high]
+
+RECENT DETAIL (LAST 14 DAYS)
+----------------------------------------------------
+Date    Weight  kcal   P    C    F   Fib  Steps   Sleep   Sess
+------  ------  -----  ---  ---  --  ---  ------  ------  ----
+Nov 7   186.7   1,900  144  233  59  28   11,131  7h 41m  1
+Nov 8   185.7   1,897  139  230  72  30   10,178  7h 23m  0
+Nov 9   186.1   2,097  138  234  72  28   10,671  7h 32m  1
+Nov 10  185.4   1,975  143  237  59  24   9,533   7h 12m  1
+Nov 11  185.7   1,902  154  223  57  27   10,494  6h 54m  1
+Nov 12  186.5   2,074  134  187  56  34   10,247  7h 32m  0
+Nov 13  185.8   2,072  158  191  63  29   9,465   7h 29m  1
+Nov 14  -       -      -    -    -   -    9,687   7h 51m  1
+Nov 15  185.2   2,069  143  210  62  30   10,456  7h 45m  0
+Nov 16  -       -      -    -    -   -    9,238   7h 12m  1
+Nov 17  185.4   -      -    -    -   -    9,991   7h 36m  1
+Nov 18  185.9   2,092  134  208  67  25   10,702  7h 57m  1
+Nov 19  185.0   1,951  148  196  74  34   9,401   7h 55m  0
+Nov 20  185.3   1,892  141  196  58  36   9,490   7h 5m   1
+  "-" means not logged. It does not mean zero.
+
+SUMMARY WINDOWS
+----------------------------------------------------
+Window  Weight avg  kcal avg  Protein avg  Steps avg  Days logged
+------  ----------  --------  -----------  ---------  -----------
+30d     187.0 lb    1,988     143 g        10,212     22/30
+60d     189.4 lb    1,986     144 g        10,330     48/60
+90d     192.1 lb    1,991     145 g        10,366     77/90
+
+MONTHLY HISTORY
+----------------------------------------------------
+Month        Weight avg  Change    kcal avg  Steps avg  Days logged
+-----------  ----------  --------  --------  ---------  -----------
+July 2026    204.5 lb    -0.22 lb  1,968     10,870     8/8
+August 2026  201.6 lb    -2.69 lb  1,988     10,359     19/21
+
+ANALYTICS
+----------------------------------------------------
+- Estimated TDEE: 2,792 ± 279 kcal
+- TDEE method: Estimated TDEE (prior only)
+- TDEE observed share: 0%
+- Plateau verdict: INSUFFICIENT_DATA
+- Plateau window: 21 days
+- Projected target date (best estimate): 2026-12-22
+- Projected target date (range): 2026-12-19 to 2026-12-25
+  - Not yet enough well-logged data for an observed estimate: need 14 days at 80% intake logging, have 21 days at 75%.
+  - This is the population formula only. It is not what your data says.
+  - Nutrition was logged on 15 of 21 days (71%), below the 85% needed to distinguish a real plateau from an unmeasured one.
+  - The range comes from the standard error of the fitted slope, not from a model of future behaviour. It assumes the current rate continues, which it usually will not.
+
+SYSTEM-DETECTED ISSUES
+----------------------------------------------------
+- Plateau status is undetermined because logging adherence is below the threshold needed to tell a real plateau from an unmeasured one.
+- Cardio adherence is 54%.
+
+RECOMMENDATION CANDIDATES
+----------------------------------------------------
+These are CANDIDATES with their evidence, not decisions. The coaching call is yours.
+
+[COLLECT_MORE_DATA_BEFORE_CHANGING] (confidence: high)
+Not enough consistent data to justify changing anything yet.
+Evidence:
+  - plateauVerdict: INSUFFICIENT_DATA
+  - loggingAdherence: 0.71
+  - windowDays: 21
+  - reasons: ["Nutrition was logged on 15 of 21 days (71%), below the 85% needed to distinguish a real plateau from an unmeasured one."]
+  - why: A flat weight trend on incomplete intake data is not evidence of a plateau. Changing calories now would be changing a variable you cannot measure.
+
+[CONSIDER_ADDING_ZONE2_CARDIO] (confidence: moderate)
+Cardio is well below the weekly target you set.
+Evidence:
+  - cardioAdherence: 0.54
+  - inputs: {"windowDays":28,"endDate":"2026-11-20","totalMinutes":324,"minutesPerWeekTarget":150,"expectedMinutes":600}
+  - why: Zone 2 work adds expenditure at low recovery cost.
+
+QUESTIONS FOR CHATGPT
+----------------------------------------------------
+1. Is the current rate of progress appropriate, given the data quality above?
+2. Is there evidence to justify changing calories, activity or training right now?
+3. What is the single most useful thing to change or keep the same this week?
+
+====================================================
+END OF CONTEXT PACK
+====================================================

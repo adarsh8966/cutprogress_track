@@ -1,0 +1,96 @@
+@import 'tailwindcss';
+
+/*
+ * CUT OS design language (spec §49)
+ * Dark-first. Minimal. Typography-heavy. Graphs dominate.
+ * Status colour (green/amber/red) is reserved for state, never decoration.
+ * No gradients, no gamification, no motivational chrome.
+ */
+@theme {
+  --color-ground: #08090a;
+  --color-surface: #0e1011;
+  --color-raised: #15181a;
+  --color-line: #1f2327;
+  --color-line-strong: #2c3238;
+
+  --color-ink: #e6e9ec;
+  --color-ink-muted: #9aa2ab;
+  --color-ink-faint: #5d666f;
+
+  /* UI accent, used for links and interactive text. Checked for WCAG text
+     contrast against --color-ground, not for chart-mark rules. */
+  --color-accent: #7aa2f7;
+  --color-accent-dim: #3d5a99;
+
+  /* CHART MARKS. Validated with the data-viz palette checker against the
+     --color-surface ground (#0e1011): all three sit inside the dark lightness
+     band L 0.48-0.67, clear the chroma floor, hold >= 3:1 contrast, and pass
+     all-pairs CVD separation (worst deutan dE 9.4). Do not tweak these by eye -
+     re-run the validator if they need to change. Slot 1 carries every
+     single-series chart; slots 2 and 3 exist only for the rare multi-series
+     case, and the palette stops at three by design. */
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  /* De-emphasis grey for context marks (raw daily readings behind a trend). */
+  --color-series-muted: #4b545c;
+
+  /* STATUS. Reserved for state, never reused as a series colour. Red and green
+     are close to indistinguishable under deuteranopia, so status is ALWAYS
+     rendered with its label alongside - never colour alone. See StatusDot. */
+  --color-good: #3fb950;
+  --color-warn: #d29922;
+  --color-bad: #f85149;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every numeral in this app is data. Keep columns aligned. */
+.tabular,
+input[type='number'] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ground);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 5px;
+}
