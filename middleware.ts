@@ -22,6 +22,10 @@
  * request a returning visitor makes with an expired access token, so dropping
  * them there logs the user out on precisely the visit that should be seamless.
  *
+ * Server Action calls are refreshed but never redirected - see isServerAction().
+ * A redirect answers a request that was expecting an action's return value with
+ * a page, which is a different contract entirely.
+ *
  * When Supabase is not configured at all, requests are passed through so the
  * app can boot and show the setup instructions rather than redirect-looping.
  */
@@ -46,6 +50,22 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
+}
+
+/**
+ * A Server Action call, which Next posts to the URL of the page the form is on
+ * with the action id in `next-action`.
+ *
+ * These are not page requests and must never be answered with a redirect. The
+ * browser follows a 307 by replaying the POST at the new location, where the
+ * action does not run; the caller is handed the redirect target's payload
+ * instead of the action's return value, and the form is left reading fields off
+ * a result that was never produced. /signup is where that bites - a session
+ * already in the browser turns "Create account" into a bounce to /dashboard -
+ * but the same holds for every action on every route.
+ */
+function isServerAction(request: NextRequest): boolean {
+  return request.method === 'POST' && request.headers.has('next-action');
 }
 
 export async function middleware(request: NextRequest) {
@@ -110,6 +130,12 @@ export async function middleware(request: NextRequest) {
   }
 
   const pathname = request.nextUrl.pathname;
+
+  // Redirecting decides which page renders, and a Server Action call is not a
+  // page request - it gets the refreshed session and is then left alone. The
+  // action guards itself (every write calls requireUser) and RLS is the real
+  // boundary, so nothing here is what keeps a signed-out caller out.
+  if (isServerAction(request)) return response;
 
   if (!user && !isPublicPath(pathname)) {
     return redirectTo('/login', pathname);

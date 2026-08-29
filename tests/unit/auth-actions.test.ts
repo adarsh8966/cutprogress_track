@@ -7,6 +7,12 @@
  * refresh but not closing the browser. And the failure path has to stay generic:
  * it must not echo the submitted credentials back, or distinguish a wrong
  * password from an unknown address.
+ *
+ * The third thing, added after /signup reported a JSON parse error as its
+ * sign-up verdict: a Supabase error that never came from an auth response must
+ * not be quoted at the user. tests/integration/auth-transport.test.ts drives
+ * that through the real client and a real socket; here it is pinned at the
+ * shapes the action branches on.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -139,9 +145,17 @@ describe('signIn', () => {
     expect(supabaseAuth.signInWithPassword).not.toHaveBeenCalled();
   });
 
+  // The shape Supabase actually answers with: an AuthApiError built from a
+  // parsed JSON body, so it carries a status and a code. That is what marks it
+  // as a verdict rather than a request that never reached the auth API.
   it('does not say whether the address or the password was wrong', async () => {
     supabaseAuth.signInWithPassword.mockResolvedValue({
-      error: { message: 'Invalid login credentials' },
+      error: {
+        name: 'AuthApiError',
+        message: 'Invalid login credentials',
+        status: 400,
+        code: 'invalid_credentials',
+      },
     });
 
     const result = await signIn(credentials('user@example.com', 'wrong-password'));
@@ -152,7 +166,12 @@ describe('signIn', () => {
 
   it('never echoes the submitted password back to the caller', async () => {
     supabaseAuth.signInWithPassword.mockResolvedValue({
-      error: { message: 'Invalid login credentials' },
+      error: {
+        name: 'AuthApiError',
+        message: 'Invalid login credentials',
+        status: 400,
+        code: 'invalid_credentials',
+      },
     });
 
     const result = await signIn(credentials('user@example.com', 'hunter2-secret'));
@@ -328,6 +347,90 @@ describe('signUp failure', () => {
 
     expect(result.ok).toBe(false);
     expect(result.message).toBe('Password is known to be weak.');
+  });
+});
+
+/**
+ * How @supabase/auth-js reports a request that produced no auth response.
+ * AuthUnknownError carries the JSON parser's own message when the endpoint
+ * answered with a document; AuthRetryableFetchError carries the network's.
+ */
+const noAuthResponse = {
+  name: 'AuthUnknownError',
+  message: `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`,
+};
+const unreachable = { name: 'AuthRetryableFetchError', message: 'fetch failed', status: 0 };
+
+describe('signUp when no auth response came back', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('does not render the JSON parser message as the sign-up outcome', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: noAuthResponse,
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('unavailable');
+    expect(result.message).not.toContain('<!DOCTYPE');
+    expect(result.message).not.toContain('is not valid JSON');
+  });
+
+  it('logs the cause rather than leaving the terminal silent', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: noAuthResponse,
+    });
+
+    await signUp(newAccount());
+
+    expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain(
+      'AuthUnknownError',
+    );
+  });
+
+  it('reports an unreachable endpoint the same way', async () => {
+    supabaseAuth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: unreachable,
+    });
+
+    const result = await signUp(newAccount());
+
+    expect(result.reason).toBe('unavailable');
+    expect(result.message).not.toBe('fetch failed');
+  });
+});
+
+describe('signIn when no auth response came back', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  // Saying the credentials were refused would be a guess: nothing judged them.
+  it('does not blame the credentials for a failed request', async () => {
+    supabaseAuth.signInWithPassword.mockResolvedValue({ error: unreachable });
+
+    const result = await signIn(credentials('user@example.com', 'correct-horse'));
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('unavailable');
+    expect(result.message).not.toBe('Those credentials were not accepted.');
+  });
+
+  it('still refuses bad credentials generically when Supabase answered', async () => {
+    supabaseAuth.signInWithPassword.mockResolvedValue({
+      error: { name: 'AuthApiError', message: 'Invalid login credentials', status: 400 },
+    });
+
+    const result = await signIn(credentials('user@example.com', 'wrong-password'));
+
+    expect(result.reason).toBe('rejected');
+    expect(result.message).toBe('Those credentials were not accepted.');
   });
 });
 

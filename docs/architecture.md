@@ -83,6 +83,22 @@ under that user's policies. Middleware refreshes the session and redirects
 signed-out traffic, but **RLS is the actual boundary** — the middleware only
 decides which page renders.
 
+Middleware never redirects a Server Action call. Those POSTs carry the action id
+in `next-action` and expect the action's return value back; a redirect makes the
+browser replay the POST at the target, where the action does not run and the
+caller is handed the wrong payload. They are refreshed and passed through — the
+actions guard themselves, and RLS is the boundary either way.
+
+Supabase reports a refused sign-in and a request that never reached an auth API
+through the same `error`, and only the first carries a message written for a
+person. `lib/supabase/auth-errors.ts` separates them on shape, never on wording:
+an `AuthRetryableFetchError` or `AuthUnknownError`, or an error carrying neither
+a status nor a code, did not come from a parsed auth response. The transport
+case is logged for the operator and reported as `unavailable`; nothing else is
+allowed into a message the user reads. Left unseparated it renders the JSON
+parser's own complaint — `Unexpected token '<', "<!DOCTYPE "...` — as the
+sign-up verdict whenever the endpoint answers with an HTML document.
+
 The service-role key is not used anywhere in the application. It has a
 commented-out slot in `.env.example` for a future Edge Function, with a warning
 attached.

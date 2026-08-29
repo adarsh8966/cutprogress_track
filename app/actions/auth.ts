@@ -13,12 +13,21 @@
  * new users to sign up". A project with that switch off answers with a
  * signup_disabled error, which is surfaced verbatim rather than reported as a
  * bad password. See README.
+ *
+ * Every message returned from here is rendered to the person at the form, so
+ * only a message written for a person may go into one. Supabase reports a
+ * refused sign-up and a request that never reached an auth API through the same
+ * `error`, and the second kind carries transport text - notably the JSON
+ * parser's own complaint when the endpoint answers with an HTML document.
+ * classifyAuthError() separates them; the transport case is logged for the
+ * operator and never quoted at the user. See lib/supabase/auth-errors.ts.
  */
 import { z } from 'zod';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createActionClient } from '@/lib/supabase/server';
+import { classifyAuthError } from '@/lib/supabase/auth-errors';
 
 const credentialsSchema = z.object({
   email: z.email('Enter a valid email address.'),
@@ -36,9 +45,18 @@ const signUpSchema = credentialsSchema
     path: ['confirmPassword'],
   });
 
+/**
+ * Why an attempt failed. `rejected` is a verdict from Supabase; `unavailable`
+ * means no verdict was ever reached, which is a different thing to tell a
+ * person and a different thing for a caller to retry.
+ */
+export type AuthFailureReason = 'validation' | 'rejected' | 'unavailable';
+
 export interface AuthResult {
   ok: boolean;
   message: string;
+  /** Set when ok is false. Absent on success. */
+  reason?: AuthFailureReason;
   /** Keyed by field name, so each input can show its own problem. */
   errors?: Record<string, string>;
 }
@@ -93,6 +111,7 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
   if (!parsed.success) {
     return {
       ok: false,
+      reason: 'validation',
       message: parsed.error.issues[0]?.message ?? 'Invalid credentials.',
       errors: fieldErrors(parsed.error),
     };
@@ -101,8 +120,15 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
   const supabase = await createActionClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) {
+    const failure = classifyAuthError(error);
+    // Supabase never judged the credentials, so saying they were rejected
+    // would be a guess. Name what happened, and log the cause for the terminal.
+    if (failure.kind === 'unavailable') {
+      console.error('[auth] sign-in could not reach Supabase Auth -', failure.detail);
+      return { ok: false, reason: 'unavailable', message: failure.message };
+    }
     // Deliberately not distinguishing "no such user" from "wrong password".
-    return { ok: false, message: 'Those credentials were not accepted.' };
+    return { ok: false, reason: 'rejected', message: 'Those credentials were not accepted.' };
   }
 
   revalidatePath('/', 'layout');
@@ -119,6 +145,7 @@ export async function signUp(formData: FormData): Promise<SignUpResult> {
     const errors = fieldErrors(parsed.error);
     return {
       ok: false,
+      reason: 'validation',
       message: parsed.error.issues[0]?.message ?? 'Check the details above.',
       errors,
     };
@@ -132,21 +159,43 @@ export async function signUp(formData: FormData): Promise<SignUpResult> {
   });
 
   if (error) {
-    // Supabase's auth messages are written for end users, so passing them
-    // through beats replacing a precise cause with a vague one. The two worth
-    // naming explicitly are the ones a person can act on.
-    if (error.code === 'signup_disabled') {
+    const failure = classifyAuthError(error);
+
+    // No auth response came back, so there is no verdict to report and
+    // error.message is transport text rather than a sentence for a person -
+    // for an endpoint answering with an HTML document it is the JSON parser's
+    // own complaint. The account was not created either way. Say that, and put
+    // the real cause where an operator reading the terminal will find it.
+    if (failure.kind === 'unavailable') {
+      console.error('[auth] sign-up could not reach Supabase Auth -', failure.detail);
+      return { ok: false, reason: 'unavailable', message: failure.message };
+    }
+
+    // Past this point Supabase answered and refused. Its auth messages are
+    // written for end users, so passing them through beats replacing a precise
+    // cause with a vague one. The two worth naming explicitly are the ones a
+    // person can act on.
+    if (failure.code === 'signup_disabled') {
       return {
         ok: false,
+        reason: 'rejected',
         message:
           'This Supabase project is not accepting new sign-ups. Enable them ' +
           'under Authentication → Sign In / Providers → Email.',
       };
     }
-    if (error.code === 'user_already_exists') {
-      return { ok: false, message: 'That email already has an account. Sign in instead.' };
+    if (failure.code === 'user_already_exists') {
+      return {
+        ok: false,
+        reason: 'rejected',
+        message: 'That email already has an account. Sign in instead.',
+      };
     }
-    return { ok: false, message: error.message || 'Could not create the account.' };
+    return {
+      ok: false,
+      reason: 'rejected',
+      message: failure.message || 'Could not create the account.',
+    };
   }
 
   // With email confirmation switched off, Supabase returns a session and the

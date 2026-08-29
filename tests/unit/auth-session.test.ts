@@ -73,6 +73,17 @@ function request(path: string) {
   return new NextRequest(`https://cutos.local${path}`);
 }
 
+/**
+ * A Server Action call, as Next issues it: a POST to the page the form is on,
+ * carrying the action id in `next-action`.
+ */
+function actionRequest(path: string) {
+  return new NextRequest(`https://cutos.local${path}`, {
+    method: 'POST',
+    headers: { 'next-action': '40f3e1f47a17003fe6acc473931e2661feefcd16ae' },
+  });
+}
+
 /** Parsed Set-Cookie names on a response, in order. */
 function cookieNames(response: NextResponse) {
   return response.cookies.getAll().map((cookie) => cookie.name);
@@ -185,6 +196,71 @@ describe('middleware: protected routes', () => {
     const response = await middleware(request('/dashboard'));
 
     expect(response.headers.get('location')).toBeNull();
+  });
+});
+
+/**
+ * A Server Action call expects the action's return value back. Redirecting it
+ * makes the browser replay the POST at the redirect target, where the action
+ * never runs - so the form awaits a result that was never produced.
+ *
+ * On /signup this is reachable from the browser: sign up with confirmation off,
+ * land on /dashboard, then go back. The restored page still shows the form, the
+ * browser now holds a session, and "Create account" is answered with a 307 to
+ * /dashboard instead of a sign-up outcome.
+ */
+describe('middleware: Server Action calls', () => {
+  it.each(['/login', '/signup'])(
+    'does not bounce a Server Action posted to %s by a signed-in visitor',
+    async (path) => {
+      supabase.getUser = () => Promise.resolve(signedIn);
+
+      const response = await middleware(actionRequest(path));
+
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.status).toBe(200);
+    },
+  );
+
+  // Redirecting this one replays the POST at /login, against a page that has no
+  // reason to receive it. The action guards itself and RLS is the boundary.
+  it('does not bounce a Server Action posted by a signed-out visitor', async () => {
+    supabase.getUser = () => Promise.resolve(signedOut);
+
+    const response = await middleware(actionRequest('/dashboard'));
+
+    expect(response.headers.get('location')).toBeNull();
+  });
+
+  it('still refreshes the session on a Server Action call', async () => {
+    supabase.getUser = () => Promise.resolve(signedIn);
+    supabase.writes = ROTATED_COOKIES;
+
+    const response = await middleware(actionRequest('/signup'));
+
+    expect(cookieNames(response)).toEqual([
+      'sb-projectref-auth-token',
+      'sb-projectref-auth-token.1',
+    ]);
+  });
+
+  // The exemption is for Server Actions, not for POSTs in general.
+  it('still bounces a plain POST with no action header', async () => {
+    supabase.getUser = () => Promise.resolve(signedIn);
+
+    const response = await middleware(
+      new NextRequest('https://cutos.local/signup', { method: 'POST' }),
+    );
+
+    expect(new URL(response.headers.get('location')!).pathname).toBe('/dashboard');
+  });
+
+  it('still bounces the page request for the same path', async () => {
+    supabase.getUser = () => Promise.resolve(signedIn);
+
+    const response = await middleware(request('/signup'));
+
+    expect(new URL(response.headers.get('location')!).pathname).toBe('/dashboard');
   });
 });
 
