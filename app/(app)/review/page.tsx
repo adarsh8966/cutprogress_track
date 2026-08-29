@@ -10,7 +10,9 @@ import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, Figure, StatusDot, formatNumber, type Status } from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
 import { weeklyReview, monthlyReview, type Assessment } from '@/lib/analytics/reviews';
-import { kgToLb, cmToInches } from '@/lib/normalization/units';
+import {
+  displayWeight, displayLength, unitsOf, unitLabels,
+} from '@/lib/normalization/units';
 import { addDays, formatMonth, monthKey, startOfWeek } from '@/lib/normalization/dates';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +29,11 @@ export default async function ReviewPage() {
   const { profile: loaded, end, metrics, sets } = await getAnalyticsWindow();
   const profile = loaded ?? DEFAULT_PROFILE;
 
+  const units = unitsOf(profile);
+  const label = unitLabels(units);
+  const asWeight = (kg: number) => displayWeight(kg, units.weight);
+  const asLength = (cm: number) => displayLength(cm, units.length);
+
   const thisWeek = weeklyReview(metrics, sets, profile.targets, end, profile.maxWeeklyLossRatePct);
   const lastWeek = weeklyReview(
     metrics, sets, profile.targets, addDays(startOfWeek(end), -1), profile.maxWeeklyLossRatePct,
@@ -42,8 +49,8 @@ export default async function ReviewPage() {
         <h1 className="text-xl font-light">Review</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
           Weight change is measured between 7-day averages at each end of the
-          period, not between two single weigh-ins - a single morning reading can
-          sit a couple of pounds from the truth on water alone.
+          period, not between two single weigh-ins — a single morning reading can
+          sit a long way from the truth on water alone.
         </p>
       </header>
 
@@ -58,22 +65,22 @@ export default async function ReviewPage() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <Figure
             label="Weight change"
-            value={w.weightChangeKg === null ? null : formatNumber(kgToLb(w.weightChangeKg), 2)}
-            unit="lb"
+            value={w.weightChangeKg === null ? null : formatNumber(asWeight(w.weightChangeKg), 2)}
+            unit={label.weight}
             size="sm"
             sub={
               w.startWeightKg !== null && w.endWeightKg !== null ? (
                 <span className="tabular text-ink-faint">
-                  {formatNumber(kgToLb(w.startWeightKg), 1)} →{' '}
-                  {formatNumber(kgToLb(w.endWeightKg), 1)}
+                  {formatNumber(asWeight(w.startWeightKg), 1)} →{' '}
+                  {formatNumber(asWeight(w.endWeightKg), 1)}
                 </span>
               ) : null
             }
           />
           <Figure
             label="Waist change"
-            value={w.waistChangeCm === null ? null : formatNumber(cmToInches(w.waistChangeCm), 2)}
-            unit="in"
+            value={w.waistChangeCm === null ? null : formatNumber(asLength(w.waistChangeCm), 2)}
+            unit={label.length}
             size="sm"
           />
           <Figure
@@ -139,9 +146,9 @@ export default async function ReviewPage() {
               value={
                 lastWeek.value.weightChangeKg === null
                   ? null
-                  : formatNumber(kgToLb(lastWeek.value.weightChangeKg), 2)
+                  : formatNumber(asWeight(lastWeek.value.weightChangeKg), 2)
               }
-              unit="lb"
+              unit={label.weight}
               size="sm"
             />
             <Figure
@@ -177,26 +184,26 @@ export default async function ReviewPage() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <Figure
             label="Starting weight"
-            value={m.startWeightKg === null ? null : formatNumber(kgToLb(m.startWeightKg), 1)}
-            unit="lb"
+            value={m.startWeightKg === null ? null : formatNumber(asWeight(m.startWeightKg), 1)}
+            unit={label.weight}
             size="sm"
           />
           <Figure
             label="Latest weight"
-            value={m.endWeightKg === null ? null : formatNumber(kgToLb(m.endWeightKg), 1)}
-            unit="lb"
+            value={m.endWeightKg === null ? null : formatNumber(asWeight(m.endWeightKg), 1)}
+            unit={label.weight}
             size="sm"
           />
           <Figure
             label="Total change"
-            value={m.totalChangeKg === null ? null : formatNumber(kgToLb(m.totalChangeKg), 2)}
-            unit="lb"
+            value={m.totalChangeKg === null ? null : formatNumber(asWeight(m.totalChangeKg), 2)}
+            unit={label.weight}
             size="sm"
           />
           <Figure
             label="Waist change"
-            value={m.waistChangeCm === null ? null : formatNumber(cmToInches(m.waistChangeCm), 2)}
-            unit="in"
+            value={m.waistChangeCm === null ? null : formatNumber(asLength(m.waistChangeCm), 2)}
+            unit={label.length}
             size="sm"
           />
           <Figure

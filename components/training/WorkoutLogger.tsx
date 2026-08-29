@@ -25,11 +25,14 @@ const SESSION_TYPES = [
 export function WorkoutLogger({
   today,
   exercises,
+  weightUnit,
   existingSessionId,
   initialSetNumber = 1,
 }: {
   today: string;
   exercises: Exercise[];
+  /** logSet converts the load with the profile's unit; the label must match. */
+  weightUnit: string;
   existingSessionId?: string;
   initialSetNumber?: number;
 }) {
@@ -111,7 +114,9 @@ export function WorkoutLogger({
               ))}
             </select>
           </Field>
-          <NumberField name="weight" label={`Load (set ${setNumber})`} unit="lb" step="0.5" />
+          <NumberField
+            name="weight" label={`Load (set ${setNumber})`} unit={weightUnit} step="0.5"
+          />
           <NumberField name="reps" label="Reps" step="1" />
           <NumberField name="rir" label="RIR" step="0.5" hint="Reps in reserve" />
         </div>
@@ -156,7 +161,7 @@ export function WorkoutLogger({
               <li key={i} className="flex justify-between gap-3">
                 <span className="text-ink-muted">{entry.exercise}</span>
                 <span className="tabular">
-                  {entry.weight || '—'} lb × {entry.reps || '—'}
+                  {entry.weight || '—'} {weightUnit} × {entry.reps || '—'}
                 </span>
               </li>
             ))}

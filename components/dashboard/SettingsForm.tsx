@@ -1,18 +1,41 @@
 'use client';
 
 /**
- * Settings form (spec §4, §45).
+ * Settings form (spec §4, §39, §45).
  *
  * The safety review runs server-side before anything is written. A BLOCK
  * finding refuses the save; a WARNING requires the acknowledgement checkbox
  * that only appears once a warning has actually been raised, so it cannot be
  * pre-ticked out of habit.
+ *
+ * THE DISPLAY UNITS ARE LIVE, AND THAT IS A CORRECTNESS REQUIREMENT.
+ *
+ * saveSettings converts the weights it receives using the unit SELECTED ON
+ * THIS FORM. The form used to render them through kgToLb() and label them "lb"
+ * regardless, so with Kilograms chosen every save read 203.7 pounds as 203.7
+ * kilograms and stored it - multiplying the user's starting and target weight
+ * by 2.2, silently, on every save.
+ *
+ * Height was worse. saveSettings reads a `heightCm` field when the length unit
+ * is CM, and this form only ever rendered feet and inches - so choosing
+ * Centimetres and saving set height to null and took the BMR and TDEE priors
+ * with it.
+ *
+ * Both are fixed the same way: the unit selects drive React state, the fields
+ * are controlled, and changing a unit converts what is already typed. The
+ * number on screen, its label, and the unit the action converts with are
+ * always the same three things.
  */
 import { useState, useTransition } from 'react';
 import { saveSettings, type SettingsResult } from '@/app/actions/settings';
 import { NumberField, SelectField, TextField } from '@/components/ui/Form';
 import type { UserProfile } from '@/lib/types';
-import { cmToFeetInches, kgToLb } from '@/lib/normalization/units';
+import {
+  cmToFeetInches, feetInchesToCm,
+  displayWeight, restateWeight,
+  WEIGHT_UNIT_LABEL, LENGTH_UNIT_LABEL,
+  type WeightUnit, type LengthUnit, type DistanceUnit,
+} from '@/lib/normalization/units';
 
 const TIMEZONES = [
   'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
@@ -23,11 +46,83 @@ const TIMEZONES = [
   'Australia/Sydney', 'Australia/Perth', 'Pacific/Auckland', 'UTC',
 ].map((value) => ({ value, label: value.replace('_', ' ') }));
 
+/** A number for an input: blank stays blank, never becomes a 0. */
+function box(value: number | null, decimals = 1): string {
+  if (value === null) return '';
+  const factor = 10 ** decimals;
+  return String(Math.round(value * factor) / factor);
+}
+
+function reading(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function SettingsForm({ profile }: { profile: UserProfile }) {
   const [result, setResult] = useState<SettingsResult | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const height = profile.heightCm === null ? null : cmToFeetInches(profile.heightCm);
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>(profile.weightDisplayUnit);
+  const [lengthUnit, setLengthUnit] = useState<LengthUnit>(profile.lengthDisplayUnit);
+  const [distanceUnit, setDistanceUnit] =
+    useState<DistanceUnit>(profile.distanceDisplayUnit);
+
+  const initialHeight =
+    profile.heightCm === null ? null : cmToFeetInches(profile.heightCm);
+  const [heightFeet, setHeightFeet] = useState(box(initialHeight?.feet ?? null, 0));
+  const [heightInches, setHeightInches] = useState(box(initialHeight?.inches ?? null, 1));
+  const [heightCm, setHeightCm] = useState(box(profile.heightCm, 1));
+
+  const [startingWeight, setStartingWeight] = useState(
+    box(profile.startingWeightKg === null
+      ? null
+      : displayWeight(profile.startingWeightKg, profile.weightDisplayUnit)),
+  );
+  const [targetWeight, setTargetWeight] = useState(
+    box(profile.targetWeightKg === null
+      ? null
+      : displayWeight(profile.targetWeightKg, profile.weightDisplayUnit)),
+  );
+
+  /**
+   * Switching the unit must not change the weight, only how it is written.
+   * Converting through canonical kg means what the user typed keeps meaning
+   * the same thing, and what the action stores is what they meant.
+   */
+  function changeWeightUnit(next: WeightUnit) {
+    if (next === weightUnit) return;
+    setStartingWeight(restateWeight(startingWeight, weightUnit, next));
+    setTargetWeight(restateWeight(targetWeight, weightUnit, next));
+    setWeightUnit(next);
+  }
+
+  /** The same for height, which is written two different ways rather than one. */
+  function changeLengthUnit(next: LengthUnit) {
+    if (next === lengthUnit) return;
+    if (next === 'CM') {
+      const feet = reading(heightFeet);
+      const inches = reading(heightInches);
+      setHeightCm(
+        feet === null && inches === null
+          ? ''
+          : box(feetInchesToCm(feet ?? 0, inches ?? 0)),
+      );
+    } else {
+      const cm = reading(heightCm);
+      if (cm === null) {
+        setHeightFeet('');
+        setHeightInches('');
+      } else {
+        const split = cmToFeetInches(cm);
+        setHeightFeet(box(split.feet, 0));
+        setHeightInches(box(split.inches, 1));
+      }
+    }
+    setLengthUnit(next);
+  }
+
   const errors = result?.errors ?? {};
   const findings = result?.findings ?? [];
   const blocking = findings.filter((f) => f.severity === 'BLOCK');
@@ -46,14 +141,28 @@ export function SettingsForm({ profile }: { profile: UserProfile }) {
           You
         </legend>
         <div className="grid gap-4 sm:grid-cols-4">
-          <NumberField
-            name="heightFeet" label="Height" unit="ft" step="1"
-            defaultValue={height?.feet} error={errors.heightFeet}
-          />
-          <NumberField
-            name="heightInches" label="&nbsp;" unit="in" step="0.5"
-            defaultValue={height ? Math.round(height.inches * 10) / 10 : undefined}
-          />
+          {/* Only the fields for the SELECTED unit are rendered, so only they
+              are submitted - and saveSettings reads exactly the pair it
+              converts with. Rendering both would put two heights in the form
+              and let the wrong one win. */}
+          {lengthUnit === 'IN' ? (
+            <>
+              <NumberField
+                name="heightFeet" label="Height" unit="ft" step="1"
+                value={heightFeet} onChange={setHeightFeet} error={errors.heightFeet}
+              />
+              <NumberField
+                name="heightInches" label="&nbsp;" unit="in" step="0.5"
+                value={heightInches} onChange={setHeightInches}
+                error={errors.heightInches}
+              />
+            </>
+          ) : (
+            <NumberField
+              name="heightCm" label="Height" unit="cm" step="0.5"
+              value={heightCm} onChange={setHeightCm} error={errors.heightCm}
+            />
+          )}
           <SelectField
             name="sex" label="Sex"
             options={[
@@ -95,20 +204,16 @@ export function SettingsForm({ profile }: { profile: UserProfile }) {
         </legend>
         <div className="grid gap-4 sm:grid-cols-3">
           <NumberField
-            name="startingWeight" label="Starting weight" unit="lb" step="0.1"
-            defaultValue={
-              profile.startingWeightKg === null
-                ? undefined
-                : Math.round(kgToLb(profile.startingWeightKg) * 10) / 10
-            }
+            name="startingWeight" label="Starting weight"
+            unit={WEIGHT_UNIT_LABEL[weightUnit]} step="0.1"
+            value={startingWeight} onChange={setStartingWeight}
+            error={errors.startingWeight}
           />
           <NumberField
-            name="targetWeight" label="Target weight" unit="lb" step="0.1"
-            defaultValue={
-              profile.targetWeightKg === null
-                ? undefined
-                : Math.round(kgToLb(profile.targetWeightKg) * 10) / 10
-            }
+            name="targetWeight" label="Target weight"
+            unit={WEIGHT_UNIT_LABEL[weightUnit]} step="0.1"
+            value={targetWeight} onChange={setTargetWeight}
+            error={errors.targetWeight}
           />
           <TextField
             name="cutStartDate" label="Cut start date" type="date"
@@ -159,23 +264,28 @@ export function SettingsForm({ profile }: { profile: UserProfile }) {
           Display units
         </legend>
         <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
-          Storage is always metric. This only changes what you read and type.
+          Storage is always metric. This only changes what you read and type —
+          changing one converts the values above rather than reinterpreting them,
+          so no measurement changes because you changed a unit.
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           <SelectField
             name="weightDisplayUnit" label="Weight"
             options={[{ value: 'LB', label: 'Pounds' }, { value: 'KG', label: 'Kilograms' }]}
-            defaultValue={profile.weightDisplayUnit}
+            value={weightUnit}
+            onChange={(value) => changeWeightUnit(value as WeightUnit)}
           />
           <SelectField
             name="distanceDisplayUnit" label="Distance"
             options={[{ value: 'MI', label: 'Miles' }, { value: 'KM', label: 'Kilometres' }]}
-            defaultValue={profile.distanceDisplayUnit}
+            value={distanceUnit}
+            onChange={(value) => setDistanceUnit(value as DistanceUnit)}
           />
           <SelectField
-            name="lengthDisplayUnit" label="Body measurements"
+            name="lengthDisplayUnit" label={`Body measurements (${LENGTH_UNIT_LABEL[lengthUnit]})`}
             options={[{ value: 'IN', label: 'Inches' }, { value: 'CM', label: 'Centimetres' }]}
-            defaultValue={profile.lengthDisplayUnit}
+            value={lengthUnit}
+            onChange={(value) => changeLengthUnit(value as LengthUnit)}
           />
         </div>
       </fieldset>

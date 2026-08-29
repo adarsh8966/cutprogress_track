@@ -26,14 +26,13 @@ import {
   displayWeight, canonicalWeight, displayLength, canonicalLength,
   displayDistance, canonicalDistance,
   WEIGHT_UNIT_LABEL, LENGTH_UNIT_LABEL, DISTANCE_UNIT_LABEL,
-  type WeightUnit, type LengthUnit, type DistanceUnit,
+  type DisplayUnits,
 } from '@/lib/normalization/units';
 
-export interface DisplayUnits {
-  weight: WeightUnit;
-  length: LengthUnit;
-  distance: DistanceUnit;
-}
+// Defined in lib/normalization/units.ts so the review screen, the forms and
+// every page read one definition of "the units this user works in". Two copies
+// of that shape is how the two halves drifted apart in the first place.
+export type { DisplayUnits };
 
 export interface FieldRow<K> {
   key: K;

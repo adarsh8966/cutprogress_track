@@ -29,7 +29,16 @@ export function LogSleepForm({ today }: { today: string }) {
   );
 }
 
-export function LogCardioForm({ today }: { today: string }) {
+/**
+ * logCardio converts the distance with the profile's unit, so the label has to
+ * be that unit. "mi" was hard-coded while the action read the setting.
+ */
+export function LogCardioForm({
+  today, distanceUnit,
+}: {
+  today: string;
+  distanceUnit: string;
+}) {
   return (
     <ActionForm action={logCardio} submitLabel="Record cardio">
       {(errors) => (
@@ -49,7 +58,8 @@ export function LogCardioForm({ today }: { today: string }) {
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <NumberField
-              name="distance" label="Distance" unit="mi" step="0.01" error={errors.distance}
+              name="distance" label="Distance" unit={distanceUnit} step="0.01"
+              error={errors.distance}
             />
             <NumberField
               name="hrZone" label="Heart-rate zone" step="1"

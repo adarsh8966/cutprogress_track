@@ -19,6 +19,7 @@
  * the gated average vanishes from this page until half a month has been logged.
  */
 import { getAnalyticsWindow } from '@/lib/data/queries';
+import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
 import { BarSeries } from '@/components/charts/BarSeries';
@@ -26,7 +27,7 @@ import { LogSleepForm, LogCardioForm, LogMetricsForm } from '@/components/dashbo
 import { recoverySummary } from '@/lib/analytics/recovery';
 import { densify } from '@/lib/analytics/series';
 import { addDays, formatShortDate } from '@/lib/normalization/dates';
-import { kmToMiles } from '@/lib/normalization/units';
+import { displayDistance, unitsOf, unitLabels } from '@/lib/normalization/units';
 import { todayForUser } from '@/app/actions/log';
 import type { Derived } from '@/lib/types';
 
@@ -59,8 +60,14 @@ function measuredOn(reading: Derived<number>) {
 }
 
 export default async function RecoveryPage() {
-  const { end, metrics, cardio } = await getAnalyticsWindow();
+  const { profile: loaded, end, metrics, cardio } = await getAnalyticsWindow();
+  const profile = loaded ?? DEFAULT_PROFILE;
   const today = await todayForUser();
+
+  // The cardio list and the cardio form must name the same unit logCardio
+  // converts with (spec §39).
+  const units = unitsOf(profile);
+  const label = unitLabels(units);
 
   const recovery = recoverySummary(metrics, end);
   const { restingHeartRate, hrv, sleepScore, totalCaloriesBurned, activeCalories } = recovery;
@@ -266,7 +273,9 @@ export default async function RecoveryPage() {
                     <span className="tabular ml-auto">
                       {formatNumber(session.durationMinutes, 0)} min
                       {session.distanceKm !== null &&
-                        ` · ${formatNumber(kmToMiles(session.distanceKm), 2)} mi`}
+                        ` · ${formatNumber(
+                          displayDistance(session.distanceKm, units.distance), 2,
+                        )} ${label.distance}`}
                     </span>
                   </div>
                   {/* Heart rates, energy and zone are stored on every cardio
@@ -301,7 +310,7 @@ export default async function RecoveryPage() {
         </Card>
 
         <Card title="Log cardio">
-          <LogCardioForm today={today} />
+          <LogCardioForm today={today} distanceUnit={label.distance} />
         </Card>
       </div>
 

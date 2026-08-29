@@ -96,6 +96,13 @@ const INPUT_CLASS =
   'w-full min-h-11 rounded border border-line bg-ground px-3 py-2 text-base ' +
   'outline-none focus:border-accent sm:text-sm';
 
+/**
+ * `value`/`onChange` make the input controlled; `defaultValue` alone leaves it
+ * uncontrolled, which is what most forms want. Settings needs the controlled
+ * form because switching the display unit has to convert the number already
+ * typed - a field labelled "lb" whose value is then read as kilograms is
+ * exactly the silent corruption this option exists to prevent.
+ */
 export function NumberField({
   name,
   label,
@@ -104,6 +111,8 @@ export function NumberField({
   error,
   hint,
   defaultValue,
+  value,
+  onChange,
   required,
 }: {
   name: string;
@@ -113,8 +122,11 @@ export function NumberField({
   error?: string;
   hint?: string;
   defaultValue?: string | number;
+  value?: string;
+  onChange?: (value: string) => void;
   required?: boolean;
 }) {
+  const controlled = value !== undefined;
   return (
     <Field label={unit ? `${label} (${unit})` : label} error={error} hint={hint}>
       <input
@@ -122,7 +134,9 @@ export function NumberField({
         name={name}
         step={step}
         required={required}
-        defaultValue={defaultValue}
+        {...(controlled
+          ? { value, onChange: (event) => onChange?.(event.target.value) }
+          : { defaultValue })}
         // Blank means "not logged". It must never read as an implied zero.
         placeholder={required ? undefined : 'not logged'}
         className={`tabular ${INPUT_CLASS}`}
@@ -156,18 +170,27 @@ export function TextField({
 }
 
 export function SelectField({
-  name, label, options, defaultValue, error, hint,
+  name, label, options, defaultValue, value, onChange, error, hint,
 }: {
   name: string;
   label: string;
   options: { value: string; label: string }[];
   defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
   error?: string;
   hint?: string;
 }) {
+  const controlled = value !== undefined;
   return (
     <Field label={label} error={error} hint={hint}>
-      <select name={name} defaultValue={defaultValue} className={INPUT_CLASS}>
+      <select
+        name={name}
+        {...(controlled
+          ? { value, onChange: (event) => onChange?.(event.target.value) }
+          : { defaultValue })}
+        className={INPUT_CLASS}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

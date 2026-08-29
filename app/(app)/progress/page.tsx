@@ -21,7 +21,9 @@ import { trailingAverage } from '@/lib/analytics/movingAverage';
 import { trend, trendChange } from '@/lib/analytics/trend';
 import { densify, trailingWindow } from '@/lib/analytics/series';
 import { addDays } from '@/lib/normalization/dates';
-import { kgToLb, cmToInches } from '@/lib/normalization/units';
+import {
+  displayWeight, displayLength, unitsOf, unitLabels,
+} from '@/lib/normalization/units';
 import { todayForUser } from '@/app/actions/log';
 import type { DailyMetrics, DatedValue } from '@/lib/types';
 
@@ -41,6 +43,14 @@ export default async function ProgressPage() {
   const profile = loaded ?? DEFAULT_PROFILE;
   const today = await todayForUser();
 
+  // Every figure and every input label on this page reads its unit from here,
+  // so what is displayed, what is typed and what logBodyMeasurement converts
+  // with cannot disagree (spec §39).
+  const units = unitsOf(profile);
+  const label = unitLabels(units);
+  const asWeight = (kg: number) => displayWeight(kg, units.weight);
+  const asLength = (cm: number) => displayLength(cm, units.length);
+
   const weight = pick(metrics, 'weightKg');
   const waist = pick(metrics, 'waistCm');
   const calories = pick(metrics, 'caloriesConsumed');
@@ -53,20 +63,20 @@ export default async function ProgressPage() {
   // Convert to display units for the chart. Analytics stayed metric throughout.
   const weightPoints = weightWindow.map((point) => ({
     date: point.date,
-    raw: point.value === null ? null : kgToLb(point.value),
+    raw: point.value === null ? null : asWeight(point.value),
     smoothed: (() => {
       const avg = trailingAverage(weight, point.date, 7);
-      return avg.value === null ? null : kgToLb(avg.value);
+      return avg.value === null ? null : asWeight(avg.value);
     })(),
   }));
 
   const waistPoints = waistWindow.map((point) => ({
     date: point.date,
-    raw: point.value === null ? null : cmToInches(point.value),
+    raw: point.value === null ? null : asLength(point.value),
     smoothed: (() => {
       // Waist is weekly, so it gets a 28-day smoothing window rather than 7.
       const avg = trailingAverage(waist, point.date, 28, { minCoverage: 0.1 });
-      return avg.value === null ? null : cmToInches(avg.value);
+      return avg.value === null ? null : asLength(avg.value);
     })(),
   }));
 
@@ -92,16 +102,16 @@ export default async function ProgressPage() {
         <Card title="7-day average">
           <DerivedFigure
             derived={weightAvg}
-            format={(kg) => formatNumber(kgToLb(kg), 1)}
-            unit="lb"
+            format={(kg) => formatNumber(asWeight(kg), 1)}
+            unit={label.weight}
           />
           <Evidence derived={weightAvg} />
         </Card>
         <Card title="Rate of change">
           <DerivedFigure
             derived={weightTrend}
-            format={(t) => formatNumber(kgToLb(t.perWeek), 2)}
-            unit="lb/wk"
+            format={(t) => formatNumber(asWeight(t.perWeek), 2)}
+            unit={`${label.weight}/wk`}
             sub={
               direction.value ? (
                 <span className="text-ink-faint">
@@ -115,8 +125,8 @@ export default async function ProgressPage() {
         <Card title="Waist rate">
           <DerivedFigure
             derived={waistTrend}
-            format={(t) => formatNumber(cmToInches(t.perWeek), 2)}
-            unit="in/wk"
+            format={(t) => formatNumber(asLength(t.perWeek), 2)}
+            unit={`${label.length}/wk`}
           />
           <Evidence derived={waistTrend} />
         </Card>
@@ -125,8 +135,8 @@ export default async function ProgressPage() {
       <Card title="Weight">
         <TrendChart
           data={weightPoints}
-          unit="lb"
-          target={profile.targetWeightKg === null ? null : kgToLb(profile.targetWeightKg)}
+          unit={label.weight}
+          target={profile.targetWeightKg === null ? null : asWeight(profile.targetWeightKg)}
           height={300}
         />
       </Card>
@@ -134,7 +144,7 @@ export default async function ProgressPage() {
       <Card title="Waist">
         <TrendChart
           data={waistPoints}
-          unit="in"
+          unit={label.length}
           smoothedLabel="28-day average"
           height={220}
         />
@@ -169,14 +179,16 @@ export default async function ProgressPage() {
             <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-ink-faint">
               Weight
             </div>
-            <TrendChart data={weightPoints} unit="lb" height={200} />
+            <TrendChart data={weightPoints} unit={label.weight} height={200} />
           </div>
         </div>
       </Card>
 
       {!hasData && (
         <Card title="Log a measurement">
-          <LogMeasurementForm today={today} />
+          <LogMeasurementForm
+            today={today} weightUnit={label.weight} lengthUnit={label.length}
+          />
         </Card>
       )}
       {hasData && (
@@ -185,7 +197,9 @@ export default async function ProgressPage() {
             Each entry is a new observation. Earlier measurements are never
             overwritten, so the full history stays reconstructable.
           </p>
-          <LogMeasurementForm today={today} />
+          <LogMeasurementForm
+            today={today} weightUnit={label.weight} lengthUnit={label.length}
+          />
           <div className="mt-6 border-t border-line pt-4">
             <div className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
               Recent measurements
@@ -198,7 +212,7 @@ export default async function ProgressPage() {
                   <li key={point.date} className="flex justify-between py-1.5">
                     <span className="tabular text-ink-muted">{point.date}</span>
                     <span className="tabular">
-                      {formatNumber(kgToLb(point.value!), 1)} lb
+                      {formatNumber(asWeight(point.value!), 1)} {label.weight}
                     </span>
                   </li>
                 ))}

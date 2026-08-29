@@ -24,7 +24,7 @@ import { Evidence } from '@/components/ui/Evidence';
 import { HorizontalBars } from '@/components/charts/HorizontalBars';
 import { WorkoutLogger } from '@/components/training/WorkoutLogger';
 import { SessionHistory } from '@/components/training/SessionHistory';
-import { kgToLb } from '@/lib/normalization/units';
+import { displayWeight, type WeightUnit, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
 import type { Exercise } from '@/lib/health/catalog';
 import type { Derived } from '@/lib/types';
 import type {
@@ -60,6 +60,7 @@ export function TrainingView({
   rows,
   today,
   exercises,
+  weightUnit,
 }: {
   sessions: TrainingSession[];
   sessionSummary: Derived<SessionSummary>;
@@ -68,8 +69,12 @@ export function TrainingView({
   rows: ExerciseRow[];
   today: string;
   exercises: Exercise[];
+  /** The user's display unit. Loads are stored in kg and read in this. */
+  weightUnit: WeightUnit;
 }) {
   const s = sessionSummary.value;
+  const weightLabel = WEIGHT_UNIT_LABEL[weightUnit];
+  const asWeight = (kg: number) => displayWeight(kg, weightUnit);
   const hasSessions = (s?.totalSessions ?? 0) > 0;
   const hasSets = (summary.value?.totalWorkingSets ?? 0) > 0;
 
@@ -184,9 +189,9 @@ export function TrainingView({
               value={
                 summary.value?.totalVolumeKg == null
                   ? null
-                  : formatNumber(kgToLb(summary.value.totalVolumeKg), 0)
+                  : formatNumber(asWeight(summary.value.totalVolumeKg), 0)
               }
-              unit="lb"
+              unit={weightLabel}
               size="sm"
             />
           </Card>
@@ -246,19 +251,19 @@ export function TrainingView({
                             .map((set) =>
                               set.weightKg == null || set.reps == null
                                 ? '—'
-                                : `${formatNumber(kgToLb(set.weightKg), 0)}×${set.reps}`,
+                                : `${formatNumber(asWeight(set.weightKg), 0)}×${set.reps}`,
                             )
                             .join(', ')}
                         </td>
                         <td className="tabular py-2.5 pr-4">
                           {p.bestWeightKg == null
                             ? '—'
-                            : `${formatNumber(kgToLb(p.bestWeightKg), 0)} lb`}
+                            : `${formatNumber(asWeight(p.bestWeightKg), 0)} ${weightLabel}`}
                         </td>
                         <td className="tabular py-2.5 pr-4">
                           {p.bestEstimated1rmKg == null
                             ? '—'
-                            : `${formatNumber(kgToLb(p.bestEstimated1rmKg), 0)} lb`}
+                            : `${formatNumber(asWeight(p.bestEstimated1rmKg), 0)} ${weightLabel}`}
                         </td>
                         <td className="py-2.5">
                           <StatusDot
@@ -287,7 +292,7 @@ export function TrainingView({
       </section>
 
       <Card title="Log a workout">
-        <WorkoutLogger today={today} exercises={exercises} />
+        <WorkoutLogger today={today} exercises={exercises} weightUnit={weightLabel} />
       </Card>
     </div>
   );

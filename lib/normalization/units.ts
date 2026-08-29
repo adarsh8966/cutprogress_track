@@ -112,3 +112,64 @@ export const DISTANCE_UNIT_LABEL: Record<DistanceUnit, string> = {
   MI: 'mi',
 };
 export const LENGTH_UNIT_LABEL: Record<LengthUnit, string> = { CM: 'cm', IN: 'in' };
+
+/**
+ * The three units a user reads and types in, carried together.
+ *
+ * WHY THIS EXISTS. The display-unit preference was honoured by every write
+ * action and ignored by every form label and every page. A form labelled
+ * "Weight (lb)" while the action converted with the profile's KG setting
+ * turned 203.7 pounds into 203.7 kilograms on save - silently, on a screen
+ * that had just told the user what unit it wanted. The preference is only safe
+ * when the label, the value shown and the conversion all read the SAME source,
+ * so that source is passed around as one object rather than assumed three
+ * times.
+ */
+export interface DisplayUnits {
+  weight: WeightUnit;
+  length: LengthUnit;
+  distance: DistanceUnit;
+}
+
+/** The user's units, from their profile. */
+export function unitsOf(profile: {
+  weightDisplayUnit: WeightUnit;
+  lengthDisplayUnit: LengthUnit;
+  distanceDisplayUnit: DistanceUnit;
+}): DisplayUnits {
+  return {
+    weight: profile.weightDisplayUnit,
+    length: profile.lengthDisplayUnit,
+    distance: profile.distanceDisplayUnit,
+  };
+}
+
+/**
+ * The same weight, written in a different unit.
+ *
+ * For a form field whose unit selector just changed: the MEASUREMENT must not
+ * change, only how it is spelled. Blank stays blank - it means "not set", and
+ * converting it would invent a zero - and text that is not a number is handed
+ * back untouched so the user can see and fix what they typed.
+ */
+export function restateWeight(text: string, from: WeightUnit, to: WeightUnit): string {
+  const trimmed = text.trim();
+  if (trimmed === '') return text;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return text;
+  if (from === to) return text;
+  return String(Math.round(displayWeight(canonicalWeight(value, from), to) * 10) / 10);
+}
+
+/** The labels for a set of display units, ready to put next to a figure. */
+export function unitLabels(units: DisplayUnits): {
+  weight: string;
+  length: string;
+  distance: string;
+} {
+  return {
+    weight: WEIGHT_UNIT_LABEL[units.weight],
+    length: LENGTH_UNIT_LABEL[units.length],
+    distance: DISTANCE_UNIT_LABEL[units.distance],
+  };
+}

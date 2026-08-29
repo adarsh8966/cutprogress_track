@@ -34,7 +34,7 @@ import {
 } from '@/lib/analytics/training';
 import { generateRecommendations } from '@/lib/analytics/recommendations';
 import {
-  cmToInches, kgToLb, kmToMiles,
+  displayWeight, displayLength, displayDistance, unitsOf, unitLabels,
 } from '@/lib/normalization/units';
 import {
   addDays, daysBetween, formatMonth, formatShortDate, monthKey,
@@ -114,8 +114,16 @@ function derivedLine(
 
 export function generateContextPack(input: ContextInput): ContextPack {
   const { profile, days, generatedFor: end } = input;
-  const lb = (kg: number) => `${formatNumber(kgToLb(kg), 1)} lb`;
-  const inches = (cm: number) => `${formatNumber(cmToInches(cm), 1)} in`;
+
+  // The pack reads in the user's own units (spec §39), so a figure quoted back
+  // by ChatGPT matches what the app shows them. Storage and every calculation
+  // above this line stay metric.
+  const units = unitsOf(profile);
+  const unit = unitLabels(units);
+  const asWeight = (kg: number) => displayWeight(kg, units.weight);
+  const asLength = (cm: number) => displayLength(cm, units.length);
+  const weightText = (kg: number) => `${formatNumber(asWeight(kg), 1)} ${unit.weight}`;
+  const lengthText = (cm: number) => `${formatNumber(asLength(cm), 1)} ${unit.length}`;
 
   const weight = pick(days, 'weightKg');
   const waist = pick(days, 'waistCm');
@@ -220,17 +228,17 @@ export function generateContextPack(input: ContextInput): ContextPack {
   parts.push(section('User profile'));
   parts.push(
     [
-      line('Height', profile.heightCm === null ? null : inches(profile.heightCm)),
+      line('Height', profile.heightCm === null ? null : lengthText(profile.heightCm)),
       line('Sex', profile.sex),
       line('Timezone', profile.timezone),
       line('Phase', profile.phase),
       line(
         'Starting weight',
-        profile.startingWeightKg === null ? null : lb(profile.startingWeightKg),
+        profile.startingWeightKg === null ? null : weightText(profile.startingWeightKg),
       ),
       line(
         'Target weight',
-        profile.targetWeightKg === null ? null : lb(profile.targetWeightKg),
+        profile.targetWeightKg === null ? null : weightText(profile.targetWeightKg),
       ),
       line('Cut start date', profile.cutStartDate),
       line('Self-imposed max loss rate', `${profile.maxWeeklyLossRatePct}% of bodyweight/week`),
@@ -258,26 +266,27 @@ export function generateContextPack(input: ContextInput): ContextPack {
     [
       line(
         'Latest weight measurement',
-        currentWeight ? `${lb(currentWeight.value!)} on ${currentWeight.date}` : null,
+        currentWeight ? `${weightText(currentWeight.value!)} on ${currentWeight.date}` : null,
       ),
-      derivedLine('7-day average weight', weightAverages.sevenDay, lb),
-      derivedLine('14-day average weight', weightAverages.fourteenDay, lb),
-      derivedLine('30-day average weight', weightAverages.thirtyDay, lb),
+      derivedLine('7-day average weight', weightAverages.sevenDay, weightText),
+      derivedLine('14-day average weight', weightAverages.fourteenDay, weightText),
+      derivedLine('30-day average weight', weightAverages.thirtyDay, weightText),
       line(
         'Total change from start',
         startWeight !== null && current !== null
-          ? `${formatRate(kgToLb(current - startWeight), 'lb')}`
+          ? `${formatRate(asWeight(current - startWeight), unit.weight)}`
           : null,
       ),
       line(
         'Remaining to target',
         profile.targetWeightKg !== null && current !== null
-          ? `${formatNumber(Math.abs(kgToLb(current - profile.targetWeightKg)), 1)} lb`
+          ? `${formatNumber(Math.abs(asWeight(current - profile.targetWeightKg)), 1)} `
+            + unit.weight
           : null,
       ),
       line(
         'Latest waist measurement',
-        currentWaist ? `${inches(currentWaist.value!)} on ${currentWaist.date}` : null,
+        currentWaist ? `${lengthText(currentWaist.value!)} on ${currentWaist.date}` : null,
       ),
     ].join('\n'),
   );
@@ -287,7 +296,7 @@ export function generateContextPack(input: ContextInput): ContextPack {
   if (weightTrend.value) {
     parts.push(
       [
-        line('Rate of change', formatRate(kgToLb(weightTrend.value.perWeek), 'lb/week')),
+        line('Rate of change', formatRate(asWeight(weightTrend.value.perWeek), `${unit.weight}/week`)),
         line('Fit quality (R²)', roundTo(weightTrend.value.rSquared, 3)),
         line('Days with a measurement', weightTrend.value.daysWithData),
         line('Confidence', weightTrend.confidence),
@@ -295,8 +304,8 @@ export function generateContextPack(input: ContextInput): ContextPack {
           'Rate direction',
           weightDirection.value
             ? `${weightDirection.value.direction} ` +
-              `(recent ${formatRate(kgToLb(weightDirection.value.recentPerWeek), 'lb/wk')} ` +
-              `vs earlier ${formatRate(kgToLb(weightDirection.value.earlierPerWeek), 'lb/wk')})`
+              `(recent ${formatRate(asWeight(weightDirection.value.recentPerWeek), `${unit.weight}/wk`)} ` +
+              `vs earlier ${formatRate(asWeight(weightDirection.value.earlierPerWeek), `${unit.weight}/wk`)})`
             : null,
         ),
       ].join('\n'),
@@ -313,7 +322,10 @@ export function generateContextPack(input: ContextInput): ContextPack {
   parts.push(
     waistTrend.value
       ? [
-          line('Rate of change', formatRate(cmToInches(waistTrend.value.perWeek), 'in/week')),
+          line(
+            'Rate of change',
+            formatRate(asLength(waistTrend.value.perWeek), `${unit.length}/week`),
+          ),
           line('Measurements used', `${waistTrend.value.daysWithData} over ${WAIST_TREND_WINDOW_DAYS} days`),
           line('Confidence', waistTrend.confidence),
         ].join('\n')
@@ -368,7 +380,11 @@ export function generateContextPack(input: ContextInput): ContextPack {
         'Running sessions (last 28 days)',
         cardioWindow.filter((c) => c.type === 'RUNNING').length,
       ),
-      line('Running distance (last 28 days)', runningKm > 0 ? formatNumber(kmToMiles(runningKm), 1) : null, 'mi'),
+      line(
+        'Running distance (last 28 days)',
+        runningKm > 0 ? formatNumber(displayDistance(runningKm, units.distance), 1) : null,
+        unit.distance,
+      ),
       line(
         'Active calories (30-day average)',
         trailingAverage(pick(days, 'activeCalories'), end, 30).value === null
@@ -436,8 +452,8 @@ export function generateContextPack(input: ContextInput): ContextPack {
           'Total volume (period)',
           training.value.totalVolumeKg === null
             ? null
-            : formatNumber(kgToLb(training.value.totalVolumeKg), 0),
-          'lb',
+            : formatNumber(asWeight(training.value.totalVolumeKg), 0),
+          unit.weight,
         ),
         line('Average RIR', training.value.averageRir),
         line('Average RPE', training.value.averageRpe),
@@ -524,7 +540,7 @@ export function generateContextPack(input: ContextInput): ContextPack {
       ['Date', 'Weight', 'kcal', 'P', 'C', 'F', 'Fib', 'Steps', 'Sleep', 'RHR', 'HRV', 'Sess'],
       detailDays.map((d) => [
         formatShortDate(d.localDate),
-        d.weightKg === null ? null : formatNumber(kgToLb(d.weightKg), 1),
+        d.weightKg === null ? null : formatNumber(asWeight(d.weightKg), 1),
         d.caloriesConsumed, d.proteinG, d.carbsG, d.fatG, d.fiberG,
         d.steps,
         d.sleepDurationMinutes === null ? null : formatSleep(d.sleepDurationMinutes),
@@ -551,7 +567,9 @@ export function generateContextPack(input: ContextInput): ContextPack {
         const logged = trailingWindow(calories, end, w).filter((p) => p.value !== null).length;
         return [
           `${w}d`,
-          weightAvg.value === null ? null : `${formatNumber(kgToLb(weightAvg.value), 1)} lb`,
+          weightAvg.value === null
+            ? null
+            : `${formatNumber(asWeight(weightAvg.value), 1)} ${unit.weight}`,
           calorieAvg.value === null ? null : formatNumber(calorieAvg.value, 0),
           proteinAvg.value === null ? null : `${formatNumber(proteinAvg.value, 0)} g`,
           stepAvg.value === null ? null : formatNumber(stepAvg.value, 0),
@@ -570,8 +588,10 @@ export function generateContextPack(input: ContextInput): ContextPack {
         ['Month', 'Weight avg', 'Change', 'kcal avg', 'Steps avg', 'Days logged'],
         monthly.map((m) => [
           m.label,
-          m.averageWeightKg === null ? null : `${formatNumber(kgToLb(m.averageWeightKg), 1)} lb`,
-          m.changeKg === null ? null : formatRate(kgToLb(m.changeKg), 'lb'),
+          m.averageWeightKg === null
+            ? null
+            : `${formatNumber(asWeight(m.averageWeightKg), 1)} ${unit.weight}`,
+          m.changeKg === null ? null : formatRate(asWeight(m.changeKg), unit.weight),
           m.averageCalories === null ? null : formatNumber(m.averageCalories, 0),
           m.averageSteps === null ? null : formatNumber(m.averageSteps, 0),
           `${m.daysLogged}/${m.dayCount}`,

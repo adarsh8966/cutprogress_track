@@ -13,7 +13,9 @@
  * app says so wherever it shows them.
  */
 import type { UserProfile } from '@/lib/types';
-import { kgToLb } from '@/lib/normalization/units';
+import {
+  displayWeight, WEIGHT_UNIT_LABEL, type WeightUnit,
+} from '@/lib/normalization/units';
 
 export type SafetySeverity = 'WARNING' | 'BLOCK';
 
@@ -83,6 +85,11 @@ export function checkCalorieTarget(
 export function checkTargetWeight(
   targetWeightKg: number | null,
   heightCm: number | null,
+  /**
+   * The unit to quote the target back in. A warning that says "148.0 lb" to
+   * someone who typed 67 is a warning about a number they did not enter.
+   */
+  weightUnit: WeightUnit = 'LB',
 ): SafetyFinding[] {
   if (targetWeightKg === null || heightCm === null) return [];
   const findings: SafetyFinding[] = [];
@@ -93,7 +100,8 @@ export function checkTargetWeight(
       code: 'TARGET_WEIGHT_BELOW_HARD_FLOOR',
       severity: 'BLOCK',
       message:
-        `A target of ${kgToLb(targetWeightKg).toFixed(1)} lb is a BMI of ` +
+        `A target of ${displayWeight(targetWeightKg, weightUnit).toFixed(1)} `
+        + `${WEIGHT_UNIT_LABEL[weightUnit]} is a BMI of ` +
         `${targetBmi.toFixed(1)}, below ${HARD_MIN_BMI}, and will not be saved.`,
       requiresAcknowledgement: false,
     });
@@ -151,6 +159,8 @@ export interface ProposedTargets {
   heightCm: number | null;
   sex: UserProfile['sex'];
   maxWeeklyLossRatePct: number | null;
+  /** How to write a weight back to the user. Defaults to pounds. */
+  weightUnit?: WeightUnit;
 }
 
 export interface SafetyReview {
@@ -163,7 +173,9 @@ export interface SafetyReview {
 export function reviewTargets(proposed: ProposedTargets): SafetyReview {
   const findings = [
     ...checkCalorieTarget(proposed.calories, proposed.sex),
-    ...checkTargetWeight(proposed.targetWeightKg, proposed.heightCm),
+    ...checkTargetWeight(
+      proposed.targetWeightKg, proposed.heightCm, proposed.weightUnit ?? 'LB',
+    ),
     ...checkWeeklyLossRate(proposed.maxWeeklyLossRatePct),
   ];
 
