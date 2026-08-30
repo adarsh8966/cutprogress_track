@@ -158,8 +158,8 @@ RECOVERY
 - 30-day average resting heart rate: 60 bpm [confidence: high]
 - Latest HRV: 66 ms [confidence: high]
 - 30-day average HRV: 59 ms [confidence: high]
-- Latest total calories burned: not computable (No measurement in the 30 days ending 2026-11-20.)
-- 30-day average total calories burned: not computable (No measurements in the 30 days ending 2026-11-20.)
+- Latest total calories burned: not logged (No measurement in the 30 days ending 2026-11-20.)
+- 30-day average total calories burned: not logged (No measurements in the 30 days ending 2026-11-20.)
 - Rest days (last 28): 8
   Note: recovery data is informational. Poor sleep alone is not a reason to skip training.
 
@@ -247,7 +247,7 @@ Evidence:
 Cardio is well below the weekly target you set.
 Evidence:
   - cardioAdherence: 0.54
-  - inputs: {"windowDays":28,"endDate":"2026-11-20","totalMinutes":323,"minutesPerWeekTarget":150,"expectedMinutes":600}
+  - inputs: {"windowDays":28,"endDate":"2026-11-20","totalMinutes":323,"daysWithData":28,"minutesPerWeekTarget":150,"expectedMinutes":600}
   - why: Zone 2 work adds expenditure at low recovery cost.
 
 QUESTIONS FOR CHATGPT

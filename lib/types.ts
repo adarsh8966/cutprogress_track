@@ -62,6 +62,12 @@ export interface Derived<T> {
   /** Human-readable caveats, e.g. why the value is null. */
   notes: string[];
   /**
+   * True when the figure cannot be computed at all - no target is set, or the
+   * metric is not supported - as opposed to there being too little data for it
+   * yet. See unavailable() and stateOf() below.
+   */
+  unavailable?: true;
+  /**
    * How many real measurements the method found, where it counted them.
    *
    * This exists so that a null value can say WHICH kind of nothing it is. Zero
@@ -113,12 +119,77 @@ export function insufficient<T>(
 }
 
 /**
+ * A figure that cannot be computed AT ALL, however much data arrives.
+ *
+ * Distinct from insufficient(): "no calorie target is set" and "only one of
+ * twenty-eight days is logged" are answered by different actions - one by
+ * Settings, the other by waiting - and a screen that says "not logged" for
+ * either is telling the user their measurements were never recorded. That is
+ * how the Dashboard came to report Training as not logged on a day with a
+ * training session on it: adherence had no target to score against, said so
+ * with an uncounted insufficient(), and the UI had nothing else to call it.
+ *
+ * `observations` is still accepted and still means what it always did, because
+ * "no target set" says nothing about whether the metric was logged.
+ */
+export function unavailable<T>(
+  method: string,
+  inputs: Record<string, unknown>,
+  reason: string,
+  observations?: number,
+): Derived<T> {
+  return {
+    value: null,
+    method,
+    inputs,
+    confidence: 'INSUFFICIENT',
+    notes: [reason],
+    unavailable: true,
+    ...(observations === undefined ? {} : { observations }),
+  };
+}
+
+/**
+ * The four claims a figure can make about itself, plus the one it must not.
+ *
+ * Spec §33 distinguishes these and the codebase kept collapsing them into the
+ * single sentence "not logged", which is a statement about the DATABASE and is
+ * false in three of the five cases:
+ *
+ *   PRESENT       a value was computed - show it
+ *   UNAVAILABLE   cannot be computed at all: no target, not supported
+ *   INSUFFICIENT  measurements exist, too few for THIS figure - show coverage,
+ *                 and show the latest actual reading beside it
+ *   NOT_LOGGED    nothing was ever recorded. The only case that sentence fits
+ *   UNKNOWN       the method did not count, so it cannot say which of the last
+ *                 two applies - and must not guess
+ *
+ * UNKNOWN exists to make the old bug unrepresentable rather than merely rare:
+ * a method that omits `observations` can no longer be rendered as "not logged"
+ * by default. tests/unit/coverage-states.test.ts fails the build if anything in
+ * lib/analytics produces one.
+ */
+export type ValueState =
+  | 'PRESENT'
+  | 'UNAVAILABLE'
+  | 'INSUFFICIENT'
+  | 'NOT_LOGGED'
+  | 'UNKNOWN';
+
+export function stateOf(d: Derived<unknown>): ValueState {
+  if (d.value !== null) return 'PRESENT';
+  if (d.unavailable) return 'UNAVAILABLE';
+  if (d.observations === undefined) return 'UNKNOWN';
+  return d.observations > 0 ? 'INSUFFICIENT' : 'NOT_LOGGED';
+}
+
+/**
  * True when a Derived<T> has no value BUT measurements exist - the figure was
  * refused for want of coverage, not for want of data. The UI and the Context
  * Pack both need this distinction, so it is defined once here.
  */
 export function isInsufficientNotAbsent(d: Derived<unknown>): boolean {
-  return d.value === null && (d.observations ?? 0) > 0;
+  return stateOf(d) === 'INSUFFICIENT';
 }
 
 /** One day of canonical, resolved metrics. Every measurement may be null. */

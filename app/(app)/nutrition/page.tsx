@@ -14,7 +14,7 @@ import { Evidence } from '@/components/ui/Evidence';
 import { BarSeries } from '@/components/charts/BarSeries';
 import { LogNutritionForm } from '@/components/nutrition/LogNutritionForm';
 import { scoreNutritionDay } from '@/lib/analytics/scores';
-import { trailingAverage } from '@/lib/analytics/movingAverage';
+import { readingOf, coverageNote } from '@/lib/analytics/reading';
 import { computeAdherence } from '@/lib/analytics/adherence';
 import { densify, trailingWindow } from '@/lib/analytics/series';
 import { addDays, formatShortDate } from '@/lib/normalization/dates';
@@ -171,8 +171,12 @@ export default async function NutritionPage() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* Each row states the coverage behind it, whether or not the average
+            could be computed. "not computable" on its own said nothing about
+            whether the days existed - and when they did, it read as though
+            they never had. */}
         <Card title="Averages">
-          <dl className="space-y-2 text-sm">
+          <dl className="space-y-3 text-sm">
             {(
               [
                 ['Calories', calories, 'kcal'],
@@ -182,17 +186,26 @@ export default async function NutritionPage() {
                 ['Fibre', fiber, 'g'],
               ] as const
             ).map(([label, series, unit]) => {
-              const avg = trailingAverage(series, end, 28);
+              const reading = readingOf(series, label, end, 28);
+              const showing = reading.average.value ?? reading.latest.value;
               return (
-                <div key={label} className="flex justify-between gap-3">
-                  <dt className="text-ink-muted">{label} (28-day)</dt>
-                  <dd className="tabular">
-                    {avg.value === null ? (
-                      <span className="text-ink-faint">not computable</span>
-                    ) : (
-                      `${formatNumber(avg.value, 0)} ${unit}`
-                    )}
-                  </dd>
+                <div key={label}>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-muted">{label} (28-day)</dt>
+                    <dd className="tabular">
+                      {showing === null ? (
+                        <span className="text-ink-faint">not logged</span>
+                      ) : (
+                        `${formatNumber(showing, 0)} ${unit}`
+                      )}
+                    </dd>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-ink-faint">
+                    {coverageNote(reading.coverage)}
+                    {reading.average.value === null && showing !== null
+                      ? ' · latest reading, not enough for a 28-day average'
+                      : ''}
+                  </div>
                 </div>
               );
             })}

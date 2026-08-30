@@ -77,6 +77,36 @@ export async function rebuildDailyMetrics(
     supabase.from('workout_sessions').select('*').eq('local_date', date),
   ]);
 
+  /**
+   * A read that failed is NOT an empty day.
+   *
+   * These six results used to go straight to `.data ?? []`, which meant a
+   * transient failure on one of them resolved that table's fields to null and
+   * WROTE THAT to daily_metrics - overwriting real values with "not logged" and
+   * reporting success. The observations were never at risk, but every page
+   * reads the canonical row, so the day went blank on screen for as long as it
+   * took someone to notice.
+   *
+   * A rebuild is a pure function of the raw layer. If the raw layer could not
+   * be read, the function has no answer, and the honest thing is to say so:
+   * rebuildRange() and rebuildCanonicalLayer() both already collect and report
+   * a failed day, and the previous row stays exactly as it was until the
+   * rebuild can actually run.
+   */
+  const reads = [
+    ['body_measurements', body], ['metric_observations', metrics],
+    ['nutrition_logs', nutrition], ['sleep_records', sleep],
+    ['cardio_sessions', cardio], ['workout_sessions', sessions],
+  ] as const;
+  for (const [table, result] of reads) {
+    if (result.error) {
+      throw new Error(
+        `Failed to rebuild daily metrics for ${date}: could not read ${table} `
+        + `(${result.error.message}). Nothing was changed; the observations are safe.`,
+      );
+    }
+  }
+
   const fields: Record<string, Observation[]> = {
     weightKg: [], waistCm: [], steps: [], activeCalories: [],
     totalCaloriesBurned: [], restingHeartRate: [], hrvMs: [],
@@ -98,9 +128,19 @@ export async function rebuildDailyMetrics(
    * day". Entering 0 would fabricate a measurement, which this system must
    * never store. Marking the row superseded removes it from the day without
    * removing it from the record.
+   *
+   * A ROW THAT CANNOT SAY IS LIVE. The test is `== null`, not `=== null`, and
+   * the loose comparison is deliberate: it accepts `undefined` too. The type
+   * says the column is always present, and against a fully migrated database it
+   * is - but `select('*')` returns whatever columns the database actually has,
+   * and a project still on migration 0011 hands back rows with no
+   * `superseded_at` key at all. Under a strict comparison every observation for
+   * the day then reads as superseded, and the whole day resolves to nulls:
+   * stored, confirmed, and invisible, which is the one failure this system
+   * exists to prevent. A withdrawal has to be stated to count.
    */
-  const live = <T extends { superseded_at: string | null }>(rows: T[]): T[] =>
-    rows.filter((row) => row.superseded_at === null);
+  const live = <T extends { superseded_at?: string | null }>(rows: T[]): T[] =>
+    rows.filter((row) => row.superseded_at == null);
 
   for (const row of live(body.data ?? [])) {
     push('weightKg', observation(row.id, row.weight_kg, row.source, row.measured_at, date));

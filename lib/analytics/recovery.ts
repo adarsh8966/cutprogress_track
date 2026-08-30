@@ -18,7 +18,7 @@
 import type { DailyMetrics, DatedValue, Derived, LocalDate } from '@/lib/types';
 import { derived, insufficient } from '@/lib/types';
 import { trailingAverage } from './movingAverage';
-import { latestReading } from './latest';
+import { metricReading, type MetricReading } from './reading';
 import { coverageOf, pickMetric, presentValues, trailingWindow } from './series';
 
 /**
@@ -31,12 +31,17 @@ import { coverageOf, pickMetric, presentValues, trailingWindow } from './series'
 export const LATEST_WINDOW_DAYS = 30;
 export const ZONE2_WINDOW_DAYS = 28;
 
-/** A metric reported both ways: what was last true, and what is typical. */
-export interface RecoveryMetric {
-  latest: Derived<number>;
+/**
+ * A metric reported both ways: what was last true, and what is typical.
+ *
+ * The shape this page invented is now lib/analytics/reading.ts, shared with the
+ * Dashboard and Nutrition - the same reading was needed there and its absence
+ * is what made a logged day read as "not logged" on the home screen.
+ * `average30` is kept as a name because it is what this page's cards are
+ * titled, and it is the same figure `average` holds.
+ */
+export interface RecoveryMetric extends MetricReading {
   average30: Derived<number>;
-  /** The per-day series, for charting on the correct dates. */
-  series: DatedValue[];
 }
 
 export interface RecoverySummary {
@@ -71,14 +76,8 @@ function metric(
   label: string,
   end: LocalDate,
 ): RecoveryMetric {
-  const series = pickMetric(days, key);
-  return {
-    series,
-    latest: latestReading(series, end, LATEST_WINDOW_DAYS, {
-      label: `${label} latest reading`,
-    }),
-    average30: trailingAverage(series, end, 30, { label: `${label} 30-day average` }),
-  };
+  const reading = metricReading(days, key, label, end, LATEST_WINDOW_DAYS);
+  return { ...reading, average30: reading.average };
 }
 
 /**

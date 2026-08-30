@@ -130,7 +130,18 @@ describe('every withdrawable table is excluded from the rebuild when superseded'
   it('filters superseded rows in exactly one place', () => {
     // A single `live()` helper, applied per source. If this stops being how it
     // is written the per-table assertions below need rechecking by hand.
-    expect(canonicalise).toContain("superseded_at === null");
+    expect(canonicalise).toContain('superseded_at == null');
+  });
+
+  it('treats a row that cannot say whether it was superseded as live', () => {
+    // `== null`, not `=== null`, and the difference is the whole day. Against a
+    // database still on migration 0011 the column is absent and every row comes
+    // back with `undefined` there; under a strict comparison all of them read as
+    // withdrawn and the day resolves to nulls - a stored measurement vanishing
+    // from every page. Erring the other way shows a live observation, which is
+    // the safe direction. Pinned because it looks exactly like a typo.
+    expect(canonicalise).not.toContain('superseded_at === null');
+    expect(canonicalise).toContain('A ROW THAT CANNOT SAY IS LIVE');
   });
 
   it.each(Object.keys(WITHDRAWABLE))('%s is read through the live filter', (table) => {

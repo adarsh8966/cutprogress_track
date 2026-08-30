@@ -11,7 +11,7 @@
  * goals, not diet quality, and there is no hidden judgement of food choices.
  */
 import type { Derived, Targets } from '@/lib/types';
-import { derived, insufficient } from '@/lib/types';
+import { derived, insufficient, unavailable } from '@/lib/types';
 import { roundTo } from './series';
 import { floorAdherence, targetAdherence } from './adherence';
 
@@ -78,6 +78,7 @@ export function scoreNutritionDay(
       'Nutrition score',
       inputs,
       'Nothing was logged for this day, so there is nothing to score. This is not a zero.',
+      0,
     );
   }
 
@@ -171,10 +172,13 @@ export function scoreNutritionDay(
   const earned = scorable.reduce((total, c) => total + c.points!, 0);
 
   if (availablePoints === 0) {
-    return insufficient<NutritionScoreResult>(
+    // The day WAS logged - it got past the check above - so this is a missing
+    // target, which Settings fixes and more logging does not.
+    return unavailable<NutritionScoreResult>(
       'Nutrition score',
       inputs,
       'No component could be scored: no targets are set and nothing comparable was logged.',
+      components.filter((c) => c.attainment !== null).length,
     );
   }
 
