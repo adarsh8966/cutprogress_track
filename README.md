@@ -110,8 +110,17 @@ its API exposes some of those. That is enforced by the shape of the code: the
 client has no method for them and the mapper's output type has no field for
 them, both asserted by tests.
 
-To sync on a schedule as well, see the optional block in `.env.example`; the
-button works without any of it.
+**Automatic daily sync (optional).** Once configured, `vercel.json` runs the
+sync once a day at 09:00 UTC. That works on **Vercel's free Hobby plan**, which
+allows one cron run per day — no paid plan is needed for any of this. On Hobby
+the job fires somewhere within the configured hour rather than on the minute,
+which is fine: the sync only asks Hevy what has changed, so an approximate hour
+costs nothing.
+
+The **Sync Hevy** button stays the way to get a workout in immediately — press
+it when you finish training rather than waiting for the overnight run. See the
+optional block in `.env.example` for the three variables the schedule needs; the
+button works without any of them.
 
 ## Daily use
 

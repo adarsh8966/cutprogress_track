@@ -141,6 +141,14 @@ import it, and `tests/unit/admin-client-containment.test.ts` fails the build if
 a second one does. With the variables unset the route answers 503 and changes
 nothing, and the Sync button works entirely under RLS without touching it.
 
+The schedule is **once a day** (09:00 UTC in `vercel.json`), which is what
+Vercel's free Hobby plan allows. Cadence is a preference rather than a
+correctness property: the sync is incremental and idempotent, so a daily run
+misses nothing a later one cannot pick up, and the Sync button covers
+immediacy. `tests/unit/cron-schedule.test.ts` holds the schedule to at most
+daily — the build refuses an over-frequent one rather than the deployment being
+rejected after the fact, which is how an hourly schedule shipped once already.
+
 ## Environment handling
 
 Supabase configuration is read lazily, at request time, never at module scope.

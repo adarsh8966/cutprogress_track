@@ -20,6 +20,24 @@
  * The response body is the same summary the button gets, so a scheduled run is
  * debuggable from the platform's own logs, and the run itself is recorded in
  * sync_runs either way.
+ *
+ * CADENCE: ONCE A DAY, AND THAT IS ENOUGH. vercel.json schedules this at 09:00
+ * UTC - overnight across North America, mid-morning in Europe - so a full
+ * training day has closed before it runs and the day's canonical rows are
+ * rebuilt before the Dashboard is next opened. Cron on Vercel is evaluated in
+ * UTC, and on the Hobby plan a job fires somewhere WITHIN the configured hour
+ * rather than on the minute, which is why the hour is what was chosen and the
+ * minute is not worth arguing about.
+ *
+ * Daily is a plan constraint - Hobby accounts are limited to one run per day -
+ * and it costs almost nothing, because freshness is the only thing cadence buys
+ * here. The sync is incremental (it asks Hevy only what changed since the last
+ * clean cursor) and idempotent (an unchanged workout is refused by a unique
+ * constraint before any work happens), so a missed hour is picked up by the next
+ * run. And the Sync button on /import is the immediate path: press it after
+ * training and the workout is in before you have put your shoes away.
+ * tests/unit/cron-schedule.test.ts holds the schedule to that limit, so the
+ * build refuses an over-frequent one instead of the deployment doing it later.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
