@@ -10,12 +10,25 @@
  * (`distanceMillimiters`, where the guide says `distanceMillimeters`). Using
  * the real shape is the point: a fixture built from the prose would agree with
  * a mapper built from the prose and neither would agree with the API.
+ *
+ * AND SOME OF THEM HAVE NO `name`. Google documents DataPoint.name as supported
+ * for a subset of identifiable data types only; the steps list and rollup
+ * responses carry a `dataSource` and a body and nothing else. The nameless
+ * builders below produce exactly that, because the fixtures that had one on
+ * every point are why a schema requiring it passed every test and then rejected
+ * the first real response.
  */
 
 /** users/{uid}/dataTypes/{type}/dataPoints/{id} - the stable external id. */
 export function dataPointName(dataType: string, id: string): string {
   return `users/2515055256096816351/dataTypes/${dataType}/dataPoints/${id}`;
 }
+
+/** The default recording source, as the observed responses carry it. */
+export const FITBIT_SOURCE = {
+  recordingMethod: 'AUTOMATICALLY_RECORDED',
+  platform: 'FITBIT',
+} as const;
 
 /** A Sample record: an instant and a value. */
 export function sample(
@@ -79,6 +92,111 @@ export function interval(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* The nameless shapes, which are the majority.                                */
+/* -------------------------------------------------------------------------- */
+
+/** The body key a data point nests its measurement under. */
+function key(dataType: string): string {
+  return dataType.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+/**
+ * A Sample with no `name`: a `dataSource` and a body, and that is all.
+ *
+ * `dataSource` is overridable and may be omitted entirely, because a real
+ * response is under no obligation to describe the device - and an identity that
+ * needs it to be present is an identity that breaks on the first point that
+ * leaves it out.
+ */
+export function namelessSample(
+  dataType: string,
+  physicalTime: string,
+  body: Record<string, unknown>,
+  dataSource: Record<string, unknown> | null = { ...FITBIT_SOURCE },
+): Record<string, unknown> {
+  return {
+    ...(dataSource === null ? {} : { dataSource }),
+    [key(dataType)]: { sampleTime: { physicalTime }, ...body },
+  };
+}
+
+/** A Daily record with no `name`: a civil date and a value. */
+export function namelessDaily(
+  dataType: string,
+  date: string,
+  body: Record<string, unknown>,
+  dataSource: Record<string, unknown> | null = { ...FITBIT_SOURCE },
+): Record<string, unknown> {
+  const [year, month, day] = date.split('-').map(Number);
+  return {
+    ...(dataSource === null ? {} : { dataSource }),
+    [key(dataType)]: { date: { year, month, day }, ...body },
+  };
+}
+
+/** An Interval record with no `name`, as the rollup endpoints return them. */
+export function namelessInterval(
+  dataType: string,
+  startTime: string,
+  endTime: string,
+  body: Record<string, unknown>,
+  dataSource: Record<string, unknown> | null = { ...FITBIT_SOURCE },
+): Record<string, unknown> {
+  return {
+    ...(dataSource === null ? {} : { dataSource }),
+    [key(dataType)]: {
+      interval: { startTime, startUtcOffset: '0s', endTime, endUtcOffset: '0s' },
+      ...body,
+    },
+  };
+}
+
+/**
+ * A day of steps, in the shape the current API actually answers with.
+ *
+ * THE FIXTURE THIS WHOLE FIX EXISTS FOR. No `name`; a `dataSource`; the count
+ * as a STRING, because the API serialises 64-bit integers that way to preserve
+ * precision; and the day expressed as an interval with its UTC offsets, which
+ * is what `dailyRollUp` returns once it has reconciled them.
+ */
+export function stepsDay(
+  date: string,
+  count: number,
+  options: {
+    /**
+     * The offset in force where the day was lived, in seconds.
+     *
+     * The interval instants are derived from it, so a day is the user's day and
+     * not UTC's - -14400 (New York in August) makes the 29th run from 04:00Z to
+     * 04:00Z, which is what the rollup endpoint actually returns once it has
+     * reconciled the offsets.
+     */
+    utcOffsetSeconds?: number;
+    dataSource?: Record<string, unknown> | null;
+  } = {},
+): Record<string, unknown> {
+  const offsetSeconds = options.utcOffsetSeconds ?? 0;
+  const source = options.dataSource === undefined
+    ? { ...FITBIT_SOURCE }
+    : options.dataSource;
+  const startMs = Date.parse(`${date}T00:00:00Z`) - offsetSeconds * 1000;
+  const offset = `${offsetSeconds}s`;
+  return {
+    ...(source === null ? {} : { dataSource: source }),
+    steps: {
+      interval: {
+        startTime: new Date(startMs).toISOString(),
+        startUtcOffset: offset,
+        endTime: new Date(startMs + 86_400_000).toISOString(),
+        endUtcOffset: offset,
+      },
+      // A string, because the API serialises 64-bit integers that way.
+      countSum: String(count),
+    },
+  };
+}
+
 /**
  * An exercise session, in the shape the codelab actually returned.
  *
@@ -86,6 +204,8 @@ export function interval(
  */
 export function exerciseSession(overrides: {
   id?: string;
+  /** Explicitly null for a session the API sent with no resource name. */
+  name?: string | null;
   startTime?: string;
   endTime?: string;
   exerciseType?: string;
@@ -102,8 +222,11 @@ export function exerciseSession(overrides: {
 } = {}): Record<string, unknown> {
   const startTime = overrides.startTime ?? '2026-08-29T10:02:00Z';
   const endTime = overrides.endTime ?? '2026-08-29T11:07:00Z';
+  const name = overrides.name === undefined
+    ? dataPointName('exercise', overrides.id ?? '8896720705097069096')
+    : overrides.name;
   return {
-    name: dataPointName('exercise', overrides.id ?? '8896720705097069096'),
+    ...(name === null ? {} : { name }),
     dataSource: { recordingMethod: 'AUTOMATICALLY_RECORDED', platform: 'FITBIT' },
     exercise: {
       interval: {
@@ -138,6 +261,8 @@ export function exerciseSession(overrides: {
 /** A sleep session with stages, in the shape the sleep guide documents. */
 export function sleepSession(overrides: {
   id?: string;
+  /** Explicitly null for a night the API sent with no resource name. */
+  name?: string | null;
   startTime?: string;
   endTime?: string;
   stages?: { startTime: string; endTime: string; type: string }[];
@@ -147,8 +272,11 @@ export function sleepSession(overrides: {
 } = {}): Record<string, unknown> {
   const startTime = overrides.startTime ?? '2026-08-28T22:30:00Z';
   const endTime = overrides.endTime ?? '2026-08-29T06:30:00Z';
+  const name = overrides.name === undefined
+    ? dataPointName('sleep', overrides.id ?? 'sleep-1')
+    : overrides.name;
   return {
-    name: dataPointName('sleep', overrides.id ?? 'sleep-1'),
+    ...(name === null ? {} : { name }),
     dataSource: { recordingMethod: 'AUTOMATICALLY_RECORDED', platform: 'FITBIT' },
     sleep: {
       interval: {
@@ -186,8 +314,16 @@ export function heartRateSamples(
 }
 
 export interface FakeApiOptions {
-  /** Data points by data type. Everything else answers empty. */
-  points?: Record<string, Record<string, unknown>[]>;
+  /**
+   * Data points by data type. Everything else answers empty.
+   *
+   * `unknown[]`, not an array of objects: a test has to be able to put a
+   * genuinely malformed element in a page - a string, a null, a point whose
+   * `dataSource` is not an object - and assert that its neighbours still
+   * import. A fixture type that can only express well-formed responses is a
+   * fixture type that cannot test the interesting case.
+   */
+  points?: Record<string, unknown[]>;
   identity?: { healthUserId?: string; googleUserId?: string };
   /** Data types that should fail, and how. */
   fail?: Record<string, { status: number; body?: string }>;

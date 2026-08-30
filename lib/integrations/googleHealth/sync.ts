@@ -25,10 +25,13 @@ import 'server-only';
  * the next run re-reads the same window. Same bargain as the Hevy sync, and free
  * for the same reason.
  *
- * NOTHING BLOCKS ON ONE FAILURE. Twenty-odd data types are read independently.
- * One that 403s for a scope the user declined, or 400s on a filter this code got
- * wrong, loses that data type and nothing else - it is recorded as a warning,
- * the run finishes PARTIAL, and the other nineteen still land.
+ * NOTHING BLOCKS ON ONE FAILURE, AND THAT NOW GOES DOWN TO THE RECORD.
+ * Twenty-odd data types are read independently: one that 403s for a scope the
+ * user declined, or 400s on a filter this code got wrong, loses that data type
+ * and nothing else. Inside a data type the same rule holds one level further
+ * down - a data point this code cannot read costs that point, not the window it
+ * arrived in and not the rest of the type. The first real sync failed at the
+ * window, which is how one optional field discarded most of a year.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, SyncRunRow } from '@/lib/supabase/types';
@@ -36,7 +39,8 @@ import type { LocalDate } from '@/lib/types';
 import { rebuildRange } from '@/lib/data/canonicalise';
 import { addDays, localToday } from '@/lib/normalization/dates';
 import { GoogleHealthError, type GoogleHealthClient } from './client';
-import type { GoogleListResponse } from './types';
+import type { GoogleDataPoint, GoogleDataPointPage, RejectedDataPoint } from './types';
+import { SyncWarnings } from './warnings';
 import { windowFilter } from './filters';
 import {
   DATA_TYPE_BY_ID, dataTypesForScopes, windowDaysFor, type DataTypeSpec,
@@ -45,6 +49,7 @@ import {
   mapDataPoint, mapSleepSession, mapExerciseSession, mapHeartRateSamples,
   type NormalisedExercise, type HeartRateSample,
 } from './mapper';
+import type { IdentitySource } from './identity';
 import {
   writeObservation, writeSleep, writeExerciseSession, recordCorrelatedExercise,
   recordUnmapped, GOOGLE_HEALTH_PROVIDER,
@@ -260,7 +265,7 @@ export async function runGoogleHealthSync(
   const runId = opened.data.id;
 
   const state = summary({ runId, cursorBefore });
-  const warnings: string[] = [];
+  const warnings = new SyncWarnings();
   const touched = new Set<LocalDate>();
   const outcomes = new Map<string, DataTypeOutcome>();
   const nextCheckpoints: Checkpoints = { ...checkpoints };
@@ -277,7 +282,7 @@ export async function runGoogleHealthSync(
       ok: status === 'SUCCEEDED',
       status,
       message,
-      warnings,
+      warnings: warnings.list(),
       byDataType,
       unmappedTypes: byDataType
         .filter((o) => DATA_TYPE_BY_ID[o.dataType]?.destination.kind === 'UNMAPPED'
@@ -337,18 +342,30 @@ export async function runGoogleHealthSync(
     return fresh;
   };
 
-  /** Reads every page of one window, honouring the page-size ceiling. */
+  /**
+   * Reads every page of one window, honouring the page-size ceiling.
+   *
+   * Points that could not be validated come back BESIDE the ones that could,
+   * rather than as an exception. That is the difference between losing a
+   * measurement and losing a year: the client used to throw on the whole page
+   * if any element of it failed to parse, and the loop below then abandoned the
+   * data type.
+   */
   const readWindow = async (
     spec: DataTypeSpec,
     from: LocalDate,
     to: LocalDate,
-  ): Promise<{ points: unknown[] } | { error: GoogleHealthError }> => {
-    const points: unknown[] = [];
+  ): Promise<
+    { points: GoogleDataPoint[]; rejected: RejectedDataPoint[] }
+    | { error: GoogleHealthError }
+  > => {
+    const points: GoogleDataPoint[] = [];
+    const rejected: RejectedDataPoint[] = [];
     let pageToken: string | null = null;
     let pages = 0;
     try {
       do {
-        const page: GoogleListResponse = spec.read === 'DAILY_ROLLUP'
+        const page: GoogleDataPointPage = spec.read === 'DAILY_ROLLUP'
           ? await options.api.dailyRollUp(spec.dataType, from, to, pageToken)
           : await options.api.list({
             dataType: spec.dataType,
@@ -357,16 +374,20 @@ export async function runGoogleHealthSync(
             pageToken,
           });
         points.push(...page.dataPoints);
+        rejected.push(...page.rejected);
         pageToken = page.nextPageToken;
         pages += 1;
       } while (pageToken !== null && pages < MAX_PAGES_PER_WINDOW);
       if (pageToken !== null) {
-        warnings.push(
-          `${spec.label}: stopped after ${MAX_PAGES_PER_WINDOW} pages for `
-          + `${from} to ${to}. The rest is read on the next sync; nothing was lost.`,
-        );
+        warnings.add({
+          dataType: spec.dataType,
+          label: spec.label,
+          kind: 'page-limit',
+          message: `stopped after ${MAX_PAGES_PER_WINDOW} pages for ${from} to ${to}. `
+            + 'The rest is read on the next sync; nothing was lost.',
+        });
       }
-      return { points };
+      return { points, rejected };
     } catch (error) {
       if (error instanceof GoogleHealthError) return { error };
       return {
@@ -397,6 +418,48 @@ export async function runGoogleHealthSync(
 
   let fatal: GoogleHealthError | null = null;
   let windowsRead = 0;
+
+  /**
+   * Derived identities minted this run, so a collision cannot pass unnoticed.
+   *
+   * An id that CUT OS mints is only as unique as the fields it is built from,
+   * and if a data type turns out to return two genuinely different points that
+   * share a time and a source, they mint the same id - and the second is then
+   * refused by the idempotency index, which is indistinguishable from "already
+   * imported". Silently. That is exactly the class of loss this system is not
+   * allowed to have, so the run keeps what it has minted and says so when two
+   * different records land on one identity. The fix for a real collision is a
+   * discriminator on the registry entry; this is what makes the need visible.
+   *
+   * ONLY DERIVED IDS ARE TRACKED. A provider name repeating within a run means
+   * Google sent two versions of one record, which is a correction and is
+   * handled correctly downstream. A minted id repeating means this code cannot
+   * tell two records apart, which is a different thing entirely - and the only
+   * one of the two that needs saying out loud.
+   */
+  const mintedIds = new Map<string, string>();
+  const noteIdentity = (
+    spec: DataTypeSpec,
+    identitySource: IdentitySource,
+    externalId: string,
+    contentVersion: string,
+  ): void => {
+    if (identitySource !== 'DERIVED') return;
+    const seen = mintedIds.get(externalId);
+    if (seen === undefined) {
+      mintedIds.set(externalId, contentVersion);
+      return;
+    }
+    if (seen === contentVersion) return;
+    warnings.add({
+      dataType: spec.dataType,
+      label: spec.label,
+      kind: 'identity-collision',
+      message: 'two different records arrived that this app cannot tell apart '
+        + `(${externalId}). Both were kept in the raw layer; only one can be `
+        + 'resolved into the day until a discriminator is added for this data type.',
+    });
+  };
 
   /**
    * Sleep last.
@@ -436,10 +499,11 @@ export async function runGoogleHealthSync(
 
     for (const window of planned) {
       if (windowsRead >= MAX_WINDOWS_PER_RUN) {
-        warnings.push(
-          'This run reached its window limit. The backfill continues on the next '
-          + 'sync from where it stopped; nothing was lost.',
-        );
+        warnings.add({
+          kind: 'window-limit',
+          message: 'This run reached its window limit. The backfill continues on '
+            + 'the next sync from where it stopped; nothing was lost.',
+        });
         break;
       }
       windowsRead += 1;
@@ -454,33 +518,71 @@ export async function runGoogleHealthSync(
         }
         outcome.failed += 1;
         outcome.error = read.error.userMessage;
-        warnings.push(`${spec.label}: ${read.error.userMessage}`);
+        warnings.add({
+          dataType: spec.dataType,
+          label: spec.label,
+          kind: `read-${read.error.kind}`,
+          message: read.error.userMessage,
+        });
         break;
       }
 
-      state.recordsFound += read.points.length;
+      state.recordsFound += read.points.length + read.rejected.length;
 
-      for (const raw of read.points) {
-        const point = raw as { name?: string };
-        if (typeof point.name !== 'string') continue;
+      /**
+       * A point that did not parse is counted and named ONCE per kind.
+       *
+       * It is a failure - the measurement did not arrive - so it is not
+       * swallowed. But the reason is a property of the response shape, not of
+       * the individual record, so a thousand of them is one sentence and a
+       * count rather than a thousand copies of the same validation dump.
+       */
+      for (const bad of read.rejected) {
+        outcome.failed += 1;
+        state.recordsFailed += 1;
+        warnings.add({
+          dataType: spec.dataType,
+          label: spec.label,
+          kind: `parse-${bad.reason}`,
+          message: `a data point could not be read (${bad.reason}). `
+            + 'It was not imported; everything else in this window was.',
+        });
+      }
 
+      for (const point of read.points) {
         /* -------------------------------------------------- sessions */
         if (spec.dataType === 'sleep') {
-          const sleep = mapSleepSession(point as never, { timezone });
-          if (sleep === null) { outcome.failed += 1; continue; }
+          const sleep = mapSleepSession(point, { timezone });
+          if (sleep === null) {
+            outcome.failed += 1;
+            warnings.add({
+              dataType: spec.dataType,
+              label: spec.label,
+              kind: 'no-interval',
+              message: 'a sleep session arrived with no start or end time and '
+                + 'could not be placed on a night.',
+            });
+            continue;
+          }
+          noteIdentity(spec, sleep.identitySource, sleep.externalId, sleep.contentVersion);
           // The physiology measured during this night, gathered from the daily
           // records that describe it, written onto the night itself.
           const written = await writeSleep(
             supabase, userId, sleep, sleepExtras.get(sleep.localDate) ?? {}, { now },
           );
-          warnings.push(...written.warnings);
+          warnings.addAll(written.warnings, { dataType: spec.dataType, label: spec.label });
           if (written.outcome === 'CREATED') { outcome.created += 1; state.recordsCreated += 1; }
           else if (written.outcome === 'UPDATED') { outcome.updated += 1; state.recordsUpdated += 1; }
           else if (written.outcome === 'UNCHANGED') {
             outcome.unchanged += 1; state.recordsUnchanged += 1;
           } else if (written.outcome === 'FAILED') {
             outcome.failed += 1; state.recordsFailed += 1;
-            if (written.message) warnings.push(`${spec.label}: ${written.message}`);
+            if (written.message) {
+              warnings.add({
+                dataType: spec.dataType, label: spec.label,
+                kind: 'write-failed', message: written.message,
+              });
+            }
           }
           if (written.localDate) touched.add(written.localDate);
           if (written.previousLocalDate) touched.add(written.previousLocalDate);
@@ -488,22 +590,49 @@ export async function runGoogleHealthSync(
         }
 
         if (spec.dataType === 'exercise') {
-          const exercise = mapExerciseSession(point as never, { timezone });
-          if (exercise === null) { outcome.failed += 1; continue; }
+          const exercise = mapExerciseSession(point, { timezone });
+          if (exercise === null) {
+            outcome.failed += 1;
+            warnings.add({
+              dataType: spec.dataType,
+              label: spec.label,
+              kind: 'no-start',
+              message: 'a workout arrived with no start time and could not be '
+                + 'placed on a timeline.',
+            });
+            continue;
+          }
+          noteIdentity(spec, exercise.identitySource, exercise.externalId, exercise.contentVersion);
           exercises.push(exercise);
           continue;
         }
 
         if (spec.dataType === 'heart-rate') {
-          heartRateSamples.push(...mapHeartRateSamples([point as never]));
+          // Samples need no identity: they are never written as records of
+          // their own, only summed into a session's telemetry.
+          heartRateSamples.push(...mapHeartRateSamples([point]));
           outcome.unchanged += 1;
           continue;
         }
 
         /* --------------------------------------------------- scalars */
-        const observation = mapDataPoint(point as never, spec, { timezone });
-        if (observation === null) { outcome.failed += 1; continue; }
-        warnings.push(...observation.warnings);
+        const observation = mapDataPoint(point, spec, { timezone });
+        if (observation === null) {
+          outcome.failed += 1;
+          warnings.add({
+            dataType: spec.dataType,
+            label: spec.label,
+            kind: 'no-time',
+            message: 'a record arrived that could not say when it was measured, '
+              + 'so it was not stored. Filing it under today would invent a '
+              + 'timestamp nobody recorded.',
+          });
+          continue;
+        }
+        warnings.addAll(observation.warnings, {
+          dataType: spec.dataType, label: spec.label, kind: 'implausible-value',
+        });
+        noteIdentity(spec, observation.identitySource, observation.externalId, observation.contentVersion);
 
         // A sleep-derived daily value belongs on the night it describes rather
         // than in a metric of its own.
@@ -515,28 +644,44 @@ export async function runGoogleHealthSync(
             });
           }
           const kept = await recordUnmapped(supabase, userId, observation);
-          if (kept !== null) warnings.push(`${spec.label}: ${kept}`);
-          else { outcome.created += 1; state.recordsCreated += 1; }
+          if (kept !== null) {
+            warnings.add({
+              dataType: spec.dataType, label: spec.label,
+              kind: 'record-failed', message: kept,
+            });
+          } else { outcome.created += 1; state.recordsCreated += 1; }
           touched.add(observation.timing.localDate);
           continue;
         }
 
         if (spec.destination.kind === 'UNMAPPED' || spec.destination.kind === 'TELEMETRY') {
           const kept = await recordUnmapped(supabase, userId, observation);
-          if (kept !== null) { outcome.failed += 1; warnings.push(`${spec.label}: ${kept}`); }
-          else { outcome.skipped += 1; }
+          if (kept !== null) {
+            outcome.failed += 1;
+            warnings.add({
+              dataType: spec.dataType, label: spec.label,
+              kind: 'record-failed', message: kept,
+            });
+          } else { outcome.skipped += 1; }
           continue;
         }
 
         const written = await writeObservation(supabase, userId, observation, spec, { now });
-        warnings.push(...written.warnings);
+        warnings.addAll(written.warnings, { dataType: spec.dataType, label: spec.label });
         if (written.outcome === 'CREATED') { outcome.created += 1; state.recordsCreated += 1; }
         else if (written.outcome === 'UPDATED') { outcome.updated += 1; state.recordsUpdated += 1; }
         else if (written.outcome === 'UNCHANGED') {
           outcome.unchanged += 1; state.recordsUnchanged += 1;
         } else if (written.outcome === 'SKIPPED') { outcome.skipped += 1; }
-        else { outcome.failed += 1; state.recordsFailed += 1;
-          if (written.message) warnings.push(`${spec.label}: ${written.message}`); }
+        else {
+          outcome.failed += 1; state.recordsFailed += 1;
+          if (written.message) {
+            warnings.add({
+              dataType: spec.dataType, label: spec.label,
+              kind: 'write-failed', message: written.message,
+            });
+          }
+        }
         if (written.localDate) touched.add(written.localDate);
       }
 
@@ -557,16 +702,20 @@ export async function runGoogleHealthSync(
   const correlationWarnings = await correlateSessions(
     supabase, userId, { exercises, heartRateSamples, today, timezone, now, touched, state },
   );
-  warnings.push(...correlationWarnings);
+  // No shared kind: these are distinct facts about distinct sessions, and
+  // folding them into one count would hide which session went unmatched.
+  warnings.addAll(correlationWarnings);
 
   /* ----------------------------------------------------------- rebuild */
   if (touched.size > 0) {
     const { failed } = await rebuildRange(supabase, userId, [...touched]);
     for (const failure of failed) {
-      warnings.push(
-        `The daily summary for ${failure.date} could not be rebuilt (${failure.message}). `
-        + 'The measurements are safe and will be recomputed on the next write.',
-      );
+      warnings.add({
+        kind: 'rebuild-failed',
+        message: `The daily summary for ${failure.date} could not be rebuilt `
+          + `(${failure.message}). The measurements are safe and will be `
+          + 'recomputed on the next write.',
+      });
     }
   }
 
@@ -592,8 +741,11 @@ export async function runGoogleHealthSync(
       // Deliberately not advanced: the next run re-reads this window and picks
       // up what failed. Replaying is free - every write here is keyed.
       null,
-      [...outcomes.values()].map((o) => o.error).filter(Boolean).join(' ')
-        || 'Some records could not be saved.',
+      // One line, aggregated. This column is rendered beside a date in the run
+      // history, and it used to hold every data type's error joined end to end
+      // - which for a systematic failure meant the same validation dump twenty
+      // times over, in a space one sentence wide.
+      warnings.summary() || 'Some records could not be saved.',
     );
   }
 

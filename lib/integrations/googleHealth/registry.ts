@@ -4,8 +4,10 @@
  * THE ONE MAPPING TABLE. Every fact about a data type lives in its entry here:
  * the id used in a URL path, the different id used in a filter, its record
  * shape, the scope that unlocks it, the endpoint that reads it, its page-size
- * and range ceilings, where its value belongs in CUT OS, and how to get the
- * value out of a payload. Nothing about a data type is scattered anywhere else.
+ * and range ceilings, where its value belongs in CUT OS, how to get the value
+ * out of a payload, and - for the few types that need one - what distinguishes
+ * two of its points when Google sends no `name`. Nothing about a data type is
+ * scattered anywhere else.
  *
  * WHY THAT MATTERS MORE THAN TIDINESS. Google Health is adding data types on a
  * published roadmap - blood pressure, basal metabolic rate, mindfulness and
@@ -31,7 +33,7 @@ import type { MetricKeyEnum } from '@/lib/supabase/types';
 import {
   ACTIVITY_SCOPE, METRICS_SCOPE, SLEEP_SCOPE, type GoogleHealthScope,
 } from './scopes';
-import { MAX_PAGE_SIZE, at, asObject, numAt, durationSeconds } from './types';
+import { MAX_PAGE_SIZE, at, asObject, numAt, strAt, durationSeconds } from './types';
 
 /** How the API shapes a record, which decides how it is timed and filtered. */
 export type RecordType = 'SAMPLE' | 'INTERVAL' | 'DAILY' | 'SESSION';
@@ -88,6 +90,22 @@ export interface DataTypeSpec {
   readonly label: string;
   /** Pulls the measurement out of a data point's body. */
   readonly extract: (body: unknown) => ExtractedValue | null;
+  /**
+   * What tells two points of this type apart when Google sends no `name`.
+   *
+   * A derived identity is built from the data type, the recording source and
+   * the time (see identity.ts), and for almost every type that is already
+   * unique: a sample is its instant, a daily record is its date. This hook is
+   * for the types where it is not - `time-in-heart-rate-zone` returns one point
+   * PER ZONE over the same interval from the same device, and without the zone
+   * name those points all mint the same id and the unique index keeps one of
+   * them. That is silent data loss, so the discriminator lives here, with the
+   * data type, rather than as a special case in the mapper.
+   *
+   * Absent means "the time and the source are enough", which is the common case
+   * and should stay the default.
+   */
+  readonly identity?: (body: unknown) => (string | number | null)[];
 }
 
 /**
@@ -349,6 +367,8 @@ export const DATA_TYPES: readonly DataTypeSpec[] = [
         + 'intraday view; no daily field expresses it.',
     },
     extract: scalar('level', ['level', 'activityLevel']),
+    // The band, in case a minute is reported as several rows rather than one.
+    identity: (body) => [strAt(body, 'level', 'activityLevel')],
   },
   {
     dataType: 'time-in-heart-rate-zone',
@@ -366,6 +386,15 @@ export const DATA_TYPES: readonly DataTypeSpec[] = [
     // make the number unattributable.
     destination: { kind: 'TELEMETRY' },
     extract: durationMinutes(['duration', 'minutes']),
+    /**
+     * THE ZONE. This type reports one point per zone over one interval, from
+     * one device - so the zone is the only thing separating five points that
+     * are otherwise identical, and a derived identity without it would keep one
+     * of the five and let the unique index quietly refuse the rest.
+     */
+    identity: (body) => [
+      strAt(body, 'zone', 'zoneName', 'heartRateZone', 'heartRateZoneType', 'type'),
+    ],
   },
   {
     dataType: 'swim-lengths-data',
@@ -383,6 +412,12 @@ export const DATA_TYPES: readonly DataTypeSpec[] = [
         + 'swim itself arrives as an exercise session.',
     },
     extract: scalar('count', ['lengths', 'count']),
+    // A length and the stroke swum in it: two lengths of a set can share an
+    // interval boundary, and the stroke is what distinguishes them.
+    identity: (body) => [
+      strAt(body, 'strokeType', 'stroke'),
+      numAt(body, 'lengthIndex', 'lapIndex', 'index'),
+    ],
   },
 
   /* ------------------------------------------------- metrics & measurements */

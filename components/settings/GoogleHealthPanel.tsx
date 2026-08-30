@@ -277,12 +277,20 @@ export function GoogleHealthPanel({
             </p>
           )}
           <Coverage rows={result.byDataType} />
-          {/* Warnings are listed, never counted. A count tells you something
-              went wrong and not what. */}
+          {/* Warnings are listed, never replaced by a bare count: a count tells
+              you something went wrong and not what. They arrive already grouped
+              by data type, each carrying one example and how many records it
+              stands for (lib/integrations/googleHealth/warnings.ts) - so a
+              systematic failure reads as one sentence rather than the same
+              validation error repeated once per data type.
+
+              Keyed by index, not by text. Two groups can render identically
+              once the counts are equal, and a duplicate React key silently
+              drops the second. */}
           {result.warnings.length > 0 && (
             <ul className="space-y-1">
-              {result.warnings.map((warning) => (
-                <li key={warning} className="text-xs text-warn">{warning}</li>
+              {result.warnings.map((warning, index) => (
+                <li key={index} className="text-xs text-warn">{warning}</li>
               ))}
             </ul>
           )}

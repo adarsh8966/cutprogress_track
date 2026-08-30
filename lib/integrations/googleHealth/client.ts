@@ -27,8 +27,8 @@
  * the user with nowhere to go.
  */
 import {
-  listResponseSchema, identitySchema,
-  type GoogleListResponse, type GoogleIdentity,
+  listResponseSchema, identitySchema, parseDataPoints,
+  type GoogleDataPointPage, type GoogleIdentity,
 } from './types';
 
 export type GoogleHealthErrorKind =
@@ -258,6 +258,32 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
     }
   }
 
+  /**
+   * The envelope, then each point on its own.
+   *
+   * MALFORMED is now reserved for a response that is not a page at all - no
+   * `dataPoints` array, a `nextPageToken` that is not a string. A point this
+   * code cannot read is reported beside the ones it could, because the
+   * alternative is what the first real sync did: throw, lose the window, and
+   * skip the rest of the data type over one element.
+   */
+  function parsePage(text: string, dataType: string | null): GoogleDataPointPage {
+    const parsed = listResponseSchema.safeParse(parseJson(text, dataType));
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      throw new GoogleHealthError(
+        'MALFORMED',
+        first === undefined
+          ? 'the response was not a page of data points'
+          : `${first.path.join('.') || 'the response'}: ${first.message}`,
+        null,
+        dataType,
+      );
+    }
+    const { points, rejected } = parseDataPoints(parsed.data.dataPoints);
+    return { dataPoints: points, nextPageToken: parsed.data.nextPageToken, rejected };
+  }
+
   return {
     /**
      * The Fitbit and Google ids for the authorised account.
@@ -270,7 +296,13 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
       const { text } = await request('/v4/users/me/identity', { method: 'GET' }, null);
       const parsed = identitySchema.safeParse(parseJson(text, null));
       if (!parsed.success) {
-        throw new GoogleHealthError('MALFORMED', parsed.error.message.slice(0, 300));
+        const first = parsed.error.issues[0];
+        throw new GoogleHealthError(
+          'MALFORMED',
+          first === undefined
+            ? 'the identity response could not be read'
+            : `${first.path.join('.') || 'the response'}: ${first.message}`,
+        );
       }
       return parsed.data;
     },
@@ -283,7 +315,7 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
      * INVALID_DATA_POINT_FILTER, which is why the two forms are separate fields
      * on the registry entry rather than one derived from the other here.
      */
-    async list(listOptions: ListOptions): Promise<GoogleListResponse> {
+    async list(listOptions: ListOptions): Promise<GoogleDataPointPage> {
       const params = new URLSearchParams();
       if (listOptions.filter) params.set('filter', listOptions.filter);
       if (listOptions.pageSize) params.set('pageSize', String(listOptions.pageSize));
@@ -293,13 +325,7 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
         + `/dataPoints${query ? `?${query}` : ''}`;
 
       const { text } = await request(path, { method: 'GET' }, listOptions.dataType);
-      const parsed = listResponseSchema.safeParse(parseJson(text, listOptions.dataType));
-      if (!parsed.success) {
-        throw new GoogleHealthError(
-          'MALFORMED', parsed.error.message.slice(0, 300), null, listOptions.dataType,
-        );
-      }
-      return parsed.data;
+      return parsePage(text, listOptions.dataType);
     },
 
     /**
@@ -317,7 +343,7 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
       from: string,
       to: string,
       pageToken: string | null = null,
-    ): Promise<GoogleListResponse> {
+    ): Promise<GoogleDataPointPage> {
       const params = new URLSearchParams();
       if (pageToken) params.set('pageToken', pageToken);
       const query = params.toString();
@@ -335,13 +361,7 @@ export function createGoogleHealthClient(options: GoogleHealthClientOptions) {
         },
       }, dataType);
 
-      const parsed = listResponseSchema.safeParse(parseJson(text, dataType));
-      if (!parsed.success) {
-        throw new GoogleHealthError(
-          'MALFORMED', parsed.error.message.slice(0, 300), null, dataType,
-        );
-      }
-      return parsed.data;
+      return parsePage(text, dataType);
     },
 
     /**

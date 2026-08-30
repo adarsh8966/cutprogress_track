@@ -116,5 +116,10 @@ and an `extract`. If the metric is new to CUT OS, also: a `metric_key` value
 (alone in its own migration), a `daily_metrics` column, a `METRIC_FIELD` entry
 in `lib/data/canonicalise.ts`, and a reader. Nothing else moves.
 
+Add an `identity` hook to the entry only if two points of that type can share a
+time AND a recording source - one point per zone over one interval, say. Without
+it they mint the same derived id and all but one is refused by the idempotency
+index, silently. Most types need none.
+
 A supported type with no destination is not a problem: mark it `UNMAPPED` and
 it is fetched, stored whole and surfaced in Settings until somebody maps it.

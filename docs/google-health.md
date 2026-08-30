@@ -181,13 +181,52 @@ verification on every notification. For one person whose device syncs every 15
 minutes anyway, the latency saved does not pay for that surface. The seam is
 there if it ever does.
 
+## Identity
+
+A data point has one of two external identities, and which one is legible from
+the id itself.
+
+**Google's, where Google sends one.** `DataPoint.name` —
+`users/{uid}/dataTypes/{type}/dataPoints/{id}` — stored verbatim.
+
+**CUT OS's own, where it does not.** Google documents `name` as supported for a
+subset of identifiable data types only; for most types, the steps response among
+them, a point carries a `dataSource` and a body and nothing else. Requiring the
+field is what made the first real sync reject well-formed responses. So one is
+minted, from the facts that identify the observation:
+
+```
+cutos:1/google-health/<dataType>/<timing>/s=<platform>~<recordingMethod>~<manufacturer>~<device>[/k=<discriminators>]
+
+cutos:1/google-health/steps/i=2026-08-29T04:00:00.000Z..2026-08-30T04:00:00.000Z/s=FITBIT~AUTOMATICALLY_RECORDED~-~-
+cutos:1/google-health/daily-resting-heart-rate/d=2026-08-29/s=FITBIT~-~-~-
+```
+
+- `timing` is `t=<instant>`, `i=<start>..<end>` or `d=<date>` — the most
+  specific thing the record actually said, and no more.
+- every part of the source is optional and renders as `-` when absent, so a
+  response with no device metadata still mints a stable id.
+- `k=` carries the registry's `identity` discriminators, for the types where a
+  time and a source are not unique. `time-in-heart-rate-zone` returns one point
+  per zone over one interval; without the zone name four of five would collide
+  and be silently refused by the index.
+- the scheme is **versioned** because changing the format is a data migration:
+  every id ever minted is stored, and a v1 id has to keep meaning what it meant.
+- the measurement is deliberately **not** part of the identity. A revised step
+  count must be a correction to one observation, not a second observation of the
+  same day.
+
+A Google resource name always begins `users/`, so the two can never be confused
+— `isDerivedExternalId` in `identity.ts` is the one place that decides.
+
 ## Idempotency
 
 `external_observations` is the ledger, and its unique index is the guarantee:
 
 ```sql
 unique (user_id, provider, data_type, external_id,
-        coalesce(external_updated_at, '-infinity'))
+        coalesce(external_updated_at, '-infinity'),
+        coalesce(content_version, ''))
 ```
 
 - an **unchanged** record is refused outright — which is what makes re-syncing
@@ -200,6 +239,42 @@ unique (user_id, provider, data_type, external_id,
 nullable column in a unique index does not constrain the rows that leave it
 null — and a data type whose payload carries no `updateTime` would silently
 lose the guarantee.
+
+**`content_version` (0017) is why that last sentence is not still true.** It is
+a digest of the data point exactly as it arrived, and it exists because
+`external_updated_at` is absent far more often than the design assumed: the
+aggregation endpoints send no `updateTime` at all. Every version was then NULL,
+every version matched, and the second read of a day was refused as a duplicate
+of the first — so **today**, still accumulating, would keep whatever partial
+figure the morning's sync happened to see. A wrong number that looks settled is
+worse than a missing one.
+
+With the digest in the key, a byte-identical re-read is still refused and a
+revised value arrives as a correction. The digest is taken over a canonical
+rendering (object keys sorted at every depth, array order preserved) of the
+**raw** point — not of the parsed one, or adding a field to the response schema
+would change every record's version and re-import a year as corrections.
+
+Rows written before 0017 have no digest, and there is no honest way to compute
+one for them. They stay NULL, and the first sync that re-reads one writes a
+fresh row and supersedes it: same value, new row, nothing lost.
+
+## A malformed point costs one point
+
+Parsing is per data point, not per page. The envelope — `dataPoints`,
+`nextPageToken` — is still validated strictly, because getting it wrong breaks
+pagination silently. Each point is then validated on its own, and one that
+cannot be read is reported beside the ones that could.
+
+This was the other half of the same bug. The failure was at the envelope, so a
+single unreadable element threw away the whole window, and the sync then
+abandoned the rest of that data type. One optional field cost most of a year.
+
+Warnings are aggregated by data type and kind
+(`lib/integrations/googleHealth/warnings.ts`): one sentence, one worked example
+and a count, rather than a line per record. A systematic failure across twenty
+data types used to render as the same 300-character validation dump twenty
+times, in the panel and again in `sync_runs.error`.
 
 A **corrected** record is a new observation that supersedes its predecessor,
 never an update: the observation tables grant no UPDATE on their measurement
@@ -216,6 +291,8 @@ Every value can answer:
 |---|---|
 | Where did this come from? | `daily_metrics.provenance[field].source` |
 | Which provider record? | `external_observations.external_id` |
+| Is that identity Google's or ours? | the `cutos:1/` prefix — see **Identity** |
+| Which version of it? | `external_updated_at`, and `content_version` |
 | What did the provider actually send? | `external_observations.payload` |
 | When was it measured? | `observed_at` / `interval_start` / `local_date` |
 | When did CUT OS receive it? | `external_observations.created_at` |

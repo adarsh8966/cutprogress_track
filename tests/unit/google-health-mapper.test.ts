@@ -102,8 +102,14 @@ describe('scalar data points', () => {
     expect(mapped.warnings.join(' ')).toMatch(/outside the plausible range/);
   });
 
-  it('refuses a data point with no identity', () => {
-    expect(mapDataPoint({ name: '' } as never, spec('weight'), UTC)).toBeNull();
+  it('imports a data point Google sent no name for', () => {
+    // Requiring `name` is what made the first real sync reject most of a year:
+    // Google documents it as supported for a subset of data types only. An
+    // absent or empty one is normal, and the identity is minted instead - see
+    // google-health-identity.test.ts for that half.
+    const nameless = { weight: { sampleTime: { physicalTime: '2026-08-29T07:00:00Z' }, kilograms: 84 } };
+    expect(mapDataPoint(nameless as never, spec('weight'), UTC)).not.toBeNull();
+    expect(mapDataPoint({ ...nameless, name: '' } as never, spec('weight'), UTC)).not.toBeNull();
   });
 
   it('refuses a data point that cannot say when it was measured', () => {
