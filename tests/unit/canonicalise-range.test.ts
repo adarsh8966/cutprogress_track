@@ -13,12 +13,34 @@ vi.mock('server-only', () => ({}));
 
 const { rebuildRange, rebuildDailyMetrics } = await import('@/lib/data/canonicalise');
 
+/**
+ * A result that can be awaited directly or narrowed further first.
+ *
+ * The rebuild filters some reads by date alone and others by date AND a null
+ * column - canonical_field_pins is `.eq(date).is('cleared_at', null)` - so a
+ * stub whose `eq` is a bare async function stops being enough. Returning a
+ * thenable that also carries the extra filters keeps every read shape working
+ * without the stub having to model a query builder.
+ */
+function result<T>(value: T) {
+  const self = {
+    then: (resolve: (v: T) => unknown) => Promise.resolve(value).then(resolve),
+    eq: () => self,
+    is: () => self,
+    in: () => self,
+    not: () => self,
+    order: () => self,
+    limit: () => self,
+  };
+  return self;
+}
+
 /** Enough of a Supabase client for the rebuild, failing on the named date. */
 function clientFailingOn(badDate: string) {
   const upserted: string[] = [];
   const client = {
     from: () => ({
-      select: () => ({ eq: async () => ({ data: [], error: null }) }),
+      select: () => result({ data: [], error: null }),
       upsert: async (row: Record<string, unknown>) => {
         if (row.local_date === badDate) return { error: { message: 'upsert refused' } };
         upserted.push(String(row.local_date));
@@ -55,7 +77,7 @@ describe('rebuildRange', () => {
   it('names every day that failed, not just the first', async () => {
     const client = {
       from: () => ({
-        select: () => ({ eq: async () => ({ data: [], error: null }) }),
+        select: () => result({ data: [], error: null }),
         upsert: async () => ({ error: { message: 'refused' } }),
       }),
     };
@@ -87,12 +109,11 @@ describe('rebuildDailyMetrics does not write an answer it does not have', () => 
     const upserts: Record<string, unknown>[] = [];
     const client = {
       from: (table: string) => ({
-        select: () => ({
-          eq: async () =>
-            table === badTable
-              ? { data: null, error: { message: 'connection reset' } }
-              : { data: table === 'body_measurements' ? rows : [], error: null },
-        }),
+        select: () => result(
+          table === badTable
+            ? { data: null, error: { message: 'connection reset' } }
+            : { data: table === 'body_measurements' ? rows : [], error: null },
+        ),
         upsert: async (row: Record<string, unknown>) => {
           upserts.push(row);
           return { error: null };

@@ -12,7 +12,7 @@ import 'server-only';
 import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
 import {
   rowToProfile, rowToDailyMetrics, rowsToDailyMetrics,
-  joinLoggedSets, rowToTrainingSession, rowToExercise,
+  joinLoggedSets, rowToTrainingSession, rowToExercise, toLocalDate,
 } from '@/lib/data/rows';
 import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { createServerComponentClient } from '@/lib/supabase/server';
@@ -20,6 +20,7 @@ import { addDays, localToday } from '@/lib/normalization/dates';
 import { toNumber } from '@/lib/normalization/numbers';
 import type {
   ContextExportRow, SystemEventRow, SyncRunRow, ExerciseRow,
+  HrZoneDefinitionRow, SessionTelemetryRow, CanonicalFieldPinRow,
 } from '@/lib/supabase/types';
 import { toDayRecords, type DayRecord } from '@/lib/data/dayRecords';
 import { apartmentGymExercises, type Exercise } from '@/lib/health/catalog';
@@ -290,6 +291,97 @@ export async function getSyncRuns(provider: string, limit = 10): Promise<SyncRun
     .eq('provider', provider)
     .order('started_at', { ascending: false })
     .limit(limit);
+  if (error || !data) return [];
+  return data;
+}
+
+/**
+ * The user's heart-rate zone boundaries, lowest zone first.
+ *
+ * Empty when none are set, which is a real state and not a failure: the zone
+ * analytics derive a model from a measured or age-predicted maximum instead,
+ * and say which they used.
+ */
+export async function getHeartRateZones(): Promise<HrZoneDefinitionRow[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('hr_zone_definitions')
+    .select('*')
+    .order('zone', { ascending: true });
+  if (error || !data) return [];
+  return data;
+}
+
+/**
+ * The physiology recorded during training sessions, keyed by session id.
+ *
+ * A Map because every caller wants "the telemetry for this session" rather than
+ * a list to search, and because a session with none is a normal case that
+ * should read as `undefined` rather than as an empty object pretending to be
+ * a measurement.
+ */
+export async function getSessionTelemetry(
+  sessionIds: readonly string[],
+): Promise<Map<string, SessionTelemetryRow>> {
+  if (sessionIds.length === 0) return new Map();
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('session_telemetry')
+    .select('*')
+    .in('session_id', [...sessionIds]);
+  if (error || !data) return new Map();
+  return new Map(data.map((row) => [row.session_id, row]));
+}
+
+/**
+ * Provider records that arrived with no canonical destination yet.
+ *
+ * Surfaced in Settings so "supported, stored, not yet mapped" is a state the
+ * user can see rather than a promise in a comment. Grouped by data type,
+ * because the useful question is "what is CUT OS holding that it does not
+ * show?" and not "which particular data point".
+ */
+export async function getUnmappedObservations(
+  provider: string,
+): Promise<{ dataType: string; count: number; latest: LocalDate | null }[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('external_observations')
+    .select('*')
+    .eq('provider', provider)
+    .is('mapped_to', null)
+    .is('superseded_at', null)
+    .order('local_date', { ascending: false })
+    .limit(2000);
+  if (error || !data) return [];
+
+  const byType = new Map<string, { count: number; latest: LocalDate | null }>();
+  for (const row of data) {
+    const seen = byType.get(row.data_type) ?? { count: 0, latest: null };
+    const date = toLocalDate(row.local_date);
+    byType.set(row.data_type, {
+      count: seen.count + 1,
+      latest: seen.latest === null || date > seen.latest ? date : seen.latest,
+    });
+  }
+  return [...byType.entries()]
+    .map(([dataType, summary]) => ({ dataType, ...summary }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * The fields on a day whose canonical value the user authored by hand.
+ *
+ * Read by /day/[date] so a pinned field can say so, and so an imported reading
+ * that is being held back can be shown as available rather than vanishing.
+ */
+export async function getCanonicalFieldPins(date: LocalDate): Promise<CanonicalFieldPinRow[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('canonical_field_pins')
+    .select('*')
+    .eq('local_date', date)
+    .is('cleared_at', null);
   if (error || !data) return [];
   return data;
 }

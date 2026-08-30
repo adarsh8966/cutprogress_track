@@ -63,6 +63,35 @@ export interface RecoverySummary {
    */
   activeCalories: RecoveryMetric;
   zone2Minutes: Derived<number>;
+
+  /**
+   * The overnight physiology a wearable measures (migration 0016).
+   *
+   * These belong together and belong here: the sleep guide's own framing is
+   * that stages give the structure of the night while HRV, respiratory rate and
+   * blood oxygen say how the body responded to it. Read one without the others
+   * and a poor night looks like bad luck rather than something with a cause.
+   *
+   * Every one is a RecoveryMetric - latest and average, with coverage - because
+   * a single night's respiratory rate says very little and a fortnight of them
+   * says a lot, and the page should be able to show both without deciding for
+   * the reader which matters.
+   */
+  respiratoryRate: RecoveryMetric;
+  oxygenSaturation: RecoveryMetric;
+  remMinutes: RecoveryMetric;
+  deepMinutes: RecoveryMetric;
+  lightMinutes: RecoveryMetric;
+  awakeMinutes: RecoveryMetric;
+  /**
+   * Skin temperature deviation from the user's own baseline, in Celsius.
+   * SIGNED, and that is the information: a night warmer than usual is a
+   * different signal from a night cooler than usual, and an absolute value
+   * would erase the distinction.
+   */
+  sleepTemperatureDelta: RecoveryMetric;
+  /** The provider's own zone accounting, kept distinct from zone2Minutes. */
+  activeZoneMinutes: RecoveryMetric;
   /**
    * Spec §14: true only when the last 7 days sit materially below the user's
    * own 30-day baseline. Informational, never a gate.
@@ -134,6 +163,16 @@ export function recoverySummary(days: DailyMetrics[], end: LocalDate): RecoveryS
     totalCaloriesBurned: metric(days, 'totalCaloriesBurned', 'Total calories burned', end),
     activeCalories: metric(days, 'activeCalories', 'Active calories', end),
     zone2Minutes: zone2Total(days, end),
+    respiratoryRate: metric(days, 'respiratoryRate', 'Respiratory rate', end),
+    oxygenSaturation: metric(days, 'oxygenSaturationPct', 'Blood oxygen', end),
+    remMinutes: metric(days, 'remMinutes', 'REM sleep', end),
+    deepMinutes: metric(days, 'deepMinutes', 'Deep sleep', end),
+    lightMinutes: metric(days, 'lightMinutes', 'Light sleep', end),
+    awakeMinutes: metric(days, 'awakeMinutes', 'Awake during sleep', end),
+    sleepTemperatureDelta: metric(
+      days, 'sleepTemperatureDeltaC', 'Sleep skin temperature', end,
+    ),
+    activeZoneMinutes: metric(days, 'activeZoneMinutes', 'Active zone minutes', end),
     belowBaseline:
       sleep7.value !== null && sleep30.value !== null && sleep7.value < sleep30.value * 0.9,
   };

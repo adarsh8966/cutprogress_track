@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { createActionClient } from '@/lib/supabase/server';
 import { rebuildDailyMetrics } from '@/lib/data/canonicalise';
+import { pinManualFields, type PinnableField } from '@/lib/data/pins';
 import { getProfile } from '@/lib/data/queries';
 import { canonicalWeight, canonicalLength, canonicalDistance } from '@/lib/normalization/units';
 import { isLocalDate, localToday, toLocalDate } from '@/lib/normalization/dates';
@@ -96,6 +97,16 @@ export async function logBodyMeasurement(formData: FormData): Promise<ActionResu
     import_id: null,
   });
   if (error) return { ok: false, message: error.message };
+
+  /**
+   * A value entered by hand is the user's answer for that day, and an import
+   * arriving later must not quietly replace it. Only the fields actually filled
+   * in are pinned - leaving waist blank is not a statement about waist.
+   */
+  await pinManualFields(supabase, userId, parsed.data.date, [
+    ...(parsed.data.weight == null ? [] : (['weightKg'] as const)),
+    ...(parsed.data.waist == null ? [] : (['waistCm'] as const)),
+  ]);
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
   revalidateDay(parsed.data.date);
@@ -207,6 +218,18 @@ export async function logDailyMetrics(formData: FormData): Promise<ActionResult>
   const { error } = await supabase.from('metric_observations').insert(rows);
   if (error) return { ok: false, message: error.message };
 
+  const PIN_FOR_METRIC: Record<string, PinnableField> = {
+    STEPS: 'steps',
+    ACTIVE_CALORIES: 'activeCalories',
+    TOTAL_CALORIES_BURNED: 'totalCaloriesBurned',
+    RESTING_HEART_RATE: 'restingHeartRate',
+    HRV_MS: 'hrvMs',
+  };
+  await pinManualFields(
+    supabase, userId, parsed.data.date,
+    rows.map((row) => PIN_FOR_METRIC[row.metric]).filter((f): f is PinnableField => !!f),
+  );
+
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
   revalidateDay(parsed.data.date);
   return { ok: true, message: 'Metrics recorded.' };
@@ -241,6 +264,11 @@ export async function logSleep(formData: FormData): Promise<ActionResult> {
     notes: null,
   });
   if (error) return { ok: false, message: error.message };
+
+  await pinManualFields(supabase, userId, parsed.data.date, [
+    'sleepDurationMinutes',
+    ...(parsed.data.score == null ? [] : (['sleepScore'] as const)),
+  ]);
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
   revalidateDay(parsed.data.date);

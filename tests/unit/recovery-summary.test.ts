@@ -7,16 +7,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { recoverySummary } from '@/lib/analytics/recovery';
-import type { DailyMetrics } from '@/lib/types';
+import type { DailyMetrics, LocalDate } from '@/lib/types';
+import { emptyDay } from '@/lib/defaults';
 
 function day(partial: Partial<DailyMetrics> & { localDate: string }): DailyMetrics {
   return {
-    weightKg: null, waistCm: null, steps: null, activeCalories: null,
-    totalCaloriesBurned: null, workoutMinutes: null, cardioMinutes: null,
-    zone2Minutes: null, restingHeartRate: null, hrvMs: null,
-    sleepDurationMinutes: null, sleepScore: null, caloriesConsumed: null,
-    proteinG: null, carbsG: null, fatG: null, fiberG: null,
-    fruitVegServings: null, trainingSessions: null,
+    ...emptyDay(partial.localDate as LocalDate),
     ...partial,
   };
 }

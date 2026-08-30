@@ -19,6 +19,7 @@ import { TrendChart } from '@/components/charts/TrendChart';
 import { BarSeries } from '@/components/charts/BarSeries';
 import { LogMeasurementForm } from '@/components/dashboard/LogMeasurementForm';
 import { trailingAverage } from '@/lib/analytics/movingAverage';
+import { latestReading } from '@/lib/analytics/latest';
 import { trend, trendChange } from '@/lib/analytics/trend';
 import { densify, trailingWindow } from '@/lib/analytics/series';
 import { addDays } from '@/lib/normalization/dates';
@@ -54,6 +55,16 @@ export default async function ProgressPage() {
 
   const weight = pick(metrics, 'weightKg');
   const waist = pick(metrics, 'waistCm');
+  /**
+   * Body composition and cardio fitness, where a connected source measures them.
+   *
+   * These belong on Progress rather than the Dashboard because they are slow:
+   * body fat moves over months and VO2 max over training blocks, and a figure
+   * that barely changes day to day earns a place in a trend view, not on a home
+   * screen that is about today.
+   */
+  const bodyFat = pick(metrics, 'bodyFatPct');
+  const vo2Max = pick(metrics, 'vo2Max');
   const calories = pick(metrics, 'caloriesConsumed');
 
   const start = addDays(end, -(WINDOW_DAYS - 1));
@@ -85,6 +96,20 @@ export default async function ProgressPage() {
   const waistTrend = trend(waist, end, 84, 'Waist trend (84 days)');
   const direction = trendChange(weight, end, 28, 'Weight rate change');
   const weightAvg = trailingAverage(weight, end, 7, { label: 'Weight 7-day average' });
+  const bodyFatLatest = latestReading(bodyFat, end, 90, { label: 'Body fat' });
+  const vo2MaxLatest = latestReading(vo2Max, end, 90, { label: 'VO2 max' });
+  /**
+   * Body fat with a 28-day smoothing line, matching waist.
+   *
+   * Smoothed over four weeks rather than one because a body-composition
+   * reading carries more noise than a scale weight does - hydration moves it -
+   * and a 7-day line would present that noise as a trend.
+   */
+  const bodyFatPoints = densify(bodyFat, start, end).map((point) => ({
+    date: point.date,
+    raw: point.value,
+    smoothed: trailingAverage(bodyFat, point.date, 30).value,
+  }));
 
   const hasData = metrics.length > 0;
 
@@ -150,6 +175,47 @@ export default async function ProgressPage() {
           height={220}
         />
       </Card>
+
+      {/*
+        Body composition and cardio fitness.
+        
+        Shown only when there is something to show. An empty chart and two
+        "not logged" cards on every Progress visit would be a permanent
+        reminder of a source the user may have no intention of connecting -
+        and unlike weight, these are not measurements the app is asking for.
+      */}
+      {(bodyFatLatest.value !== null || vo2MaxLatest.value !== null) && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card title="Body fat">
+              <DerivedFigure
+                derived={bodyFatLatest}
+                format={(v) => formatNumber(v, 1)}
+                unit="%"
+              />
+              <Evidence derived={bodyFatLatest} />
+            </Card>
+            <Card title="VO2 max">
+              <DerivedFigure
+                derived={vo2MaxLatest}
+                format={(v) => formatNumber(v, 1)}
+                unit="ml/kg/min"
+              />
+              <Evidence derived={vo2MaxLatest} />
+            </Card>
+          </div>
+          {bodyFatLatest.value !== null && (
+            <Card title="Body fat over time">
+              <TrendChart
+                data={bodyFatPoints}
+                unit="%"
+                smoothedLabel="30-day average"
+                height={200}
+              />
+            </Card>
+          )}
+        </>
+      )}
 
       {/*
         Spec §25's calories-versus-weight comparison. Two charts, one shared

@@ -20,7 +20,8 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getDayDetail, getProfile } from '@/lib/data/queries';
+import { getDayDetail, getProfile, getCanonicalFieldPins } from '@/lib/data/queries';
+import { FieldPin } from '@/components/day/FieldPin';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card } from '@/components/ui/primitives';
 import { DayRecords } from '@/components/day/DayRecords';
@@ -57,6 +58,11 @@ export default async function DayPage({
   ]);
   const profile = loaded ?? DEFAULT_PROFILE;
   const units = unitsOf(profile);
+
+  // Fields whose canonical value the user authored by hand, and which an
+  // import is therefore not allowed to move (0016).
+  const pins = await getCanonicalFieldPins(date as LocalDate);
+  const pinned = new Map(pins.map((pin) => [pin.field, pin]));
 
   const disagreeing = new Set(conflicts(detail.provenance));
   const corrected = new Set(corrections(detail.provenance));
@@ -194,6 +200,9 @@ export default async function DayPage({
                         </>
                       ) : (
                         <span className="text-ink-faint">source not recorded</span>
+                      )}
+                      {pinned.has(field.key) && (
+                        <FieldPin date={date} field={field.key} label={field.label} />
                       )}
                     </div>
                     {isConflict && (

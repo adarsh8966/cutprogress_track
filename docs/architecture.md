@@ -5,7 +5,9 @@ Next.js 16 (App Router, React 19, TypeScript strict)
   ├── app/            routes + server actions
   ├── components/     UI, charts, forms
   └── lib/            PURE core - no I/O, no Supabase imports
-        ├── integrations/hevy/   external training, one-way
+        ├── integrations/hevy/          external training, one-way
+        ├── integrations/googleHealth/  external health, one-way
+        ├── data/context/               canonical readers for the AI layer
         ↓
 Supabase
   ├── PostgreSQL      raw observations → canonical daily rows → derived output
@@ -78,11 +80,13 @@ once, at step 1.
 
 ## External integrations
 
-`lib/integrations/hevy/` is one more writer into the existing path, not a
-subsystem beside it. It reads Hevy's change feed, normalises, and writes
-`workout_sessions`, `workout_sets`, `exercises` and `health_imports` — the same
-tables the manual logger and the paste importer write — so a synced workout is
-read, resolved and analysed by everything downstream exactly as any other.
+Both integrations are one more writer into the existing path, not a subsystem
+beside it. Each reads its source, normalises, and writes the same tables the
+manual logger and the paste importer write — so a synced record is read,
+resolved and analysed by everything downstream exactly as any other.
+
+`lib/integrations/hevy/` reads Hevy's change feed and writes
+`workout_sessions`, `workout_sets`, `exercises` and `health_imports`.
 
 ```
 Hevy API  →  client.ts   (read-only surface, Zod-validated, injected fetch)
@@ -104,6 +108,47 @@ Three properties are structural rather than conventional:
   they take the one their caller is entitled to use and filter by an explicit
   `user_id` besides. Today the only caller is the Sync button, which runs as the
   signed-in user under RLS.
+
+`lib/integrations/googleHealth/` is the mirror image, and it is where the health
+half of the model finally gets a source. `docs/google-health.md` is the whole of
+it; the properties that match the shape above are:
+
+```
+Google Health  →  client.ts     read-only surface, injected fetch, classified errors
+               →  registry.ts   PURE: data type -> canonical destination, in ONE table
+               →  mapper.ts     PURE: mm->km, seconds->minutes, instant->local date
+               →  correlate.ts  PURE: workout <-> recording, by interval overlap
+               →  writer.ts     keyed writes; supersession, never deletion
+               →  rebuildDailyMetrics  → the existing canonical layer and readers
+```
+
+- **Read-only.** No `.writeonly` scope is requested and the client has no
+  create, patch or delete method, so writing back is not something a caller can
+  do wrongly — it is something a caller cannot express.
+- **Health only, and never nutrition.** No nutrition scope is requested, and a
+  source-level test fails the build if any file in the directory names a
+  nutrition table, an exercise or a set. Calories BURNED arrive; calories
+  CONSUMED are entered by hand and nothing imported can reach them.
+- **The provider's record is kept whole.** `external_observations` holds the
+  data point as Google sent it, keyed on identity AND version — so an unchanged
+  record is refused by an index, an edited one gets through, and every version
+  that ever arrived keeps its row.
+
+### One credential is stored, and this is the narrowing
+
+Hevy needed a single static API key, so "no third-party credential is in the
+database" cost nothing. An OAuth refresh token cannot work that way: it is
+issued per user at consent time and is revocable by that user. So it is stored —
+encrypted with AES-256-GCM, with the key in the environment and never in the
+database, never returned to the browser, and destroyed on disconnect. A copy of
+the database is not a way into anyone's Google account.
+
+### Canonical readers
+
+`lib/data/context/` returns the canonical model in CUT OS's own vocabulary, for
+the assistant that comes next. No provider name appears in any type it returns,
+it reuses the same readers the pages use rather than a parallel path, and it
+copies nothing — asserted in `tests/unit/ai-context-boundary.test.ts`.
 
 ## Auth and RLS
 

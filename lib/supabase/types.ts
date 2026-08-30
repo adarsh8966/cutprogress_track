@@ -31,7 +31,13 @@ export type CardioTypeEnum =
   | 'WALKING' | 'INCLINE_WALKING' | 'RUNNING' | 'CYCLING' | 'OTHER';
 export type MetricKeyEnum =
   | 'STEPS' | 'ACTIVE_CALORIES' | 'TOTAL_CALORIES_BURNED'
-  | 'RESTING_HEART_RATE' | 'HRV_MS' | 'WORKOUT_MINUTES' | 'CARDIO_MINUTES';
+  | 'RESTING_HEART_RATE' | 'HRV_MS' | 'WORKOUT_MINUTES' | 'CARDIO_MINUTES'
+  // 0015. Every one of these has a METRIC_FIELD entry in lib/data/canonicalise.ts
+  // and a canonical column. A key with neither is stored and never resolved,
+  // which is what already happens to WORKOUT_MINUTES and CARDIO_MINUTES.
+  | 'DISTANCE_KM' | 'FLOORS' | 'ACTIVE_MINUTES' | 'ACTIVE_ZONE_MINUTES'
+  | 'SEDENTARY_MINUTES' | 'VO2_MAX' | 'BODY_FAT_PCT' | 'RESPIRATORY_RATE'
+  | 'OXYGEN_SATURATION_PCT';
 export type GoalTypeEnum =
   | 'WEIGHT' | 'WAIST' | 'STEPS' | 'CALORIES' | 'PROTEIN'
   | 'TRAINING_FREQUENCY' | 'CARDIO_MINUTES' | 'RUNNING_DISTANCE';
@@ -45,7 +51,9 @@ export type SystemEventKindEnum =
   | 'IMPORT_CONFIRMED' | 'IMPORT_DUPLICATE_REJECTED' | 'CANONICAL_RESOLVED'
   | 'TARGET_CHANGED' | 'RECOMMENDATION_GENERATED' | 'CONTEXT_EXPORTED'
   | 'SAFETY_WARNING_ACKNOWLEDGED' | 'PROFILE_UPDATED'
-  | 'OBSERVATION_SUPERSEDED' | 'OBSERVATION_RESTORED';
+  | 'OBSERVATION_SUPERSEDED' | 'OBSERVATION_RESTORED'
+  | 'PROVIDER_CONNECTED' | 'PROVIDER_DISCONNECTED'
+  | 'CANONICAL_FIELD_PINNED' | 'CANONICAL_FIELD_UNPINNED';
 
 export type ProfileRow = {
   id: string;
@@ -150,6 +158,24 @@ export type SleepRecordRow = {
    */
   superseded_at: string | null;
   superseded_by: string | null;
+  /** Stage breakdown and sleep physiology (0016). NULL means not measured. */
+  rem_minutes: number | null;
+  deep_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  /**
+   * Brief wake transitions, COUNTED. Deliberately not added to awake_minutes:
+   * they overlap the surrounding stages rather than partitioning the night, so
+   * summing them would count the same minutes twice.
+   */
+  short_awakenings: number | null;
+  /** Signed: a colder night than baseline is negative, and is a measurement. */
+  temperature_delta_c: number | null;
+  respiratory_rate: number | null;
+  oxygen_saturation_pct: number | null;
+  external_source: string | null;
+  external_id: string | null;
+  external_updated_at: string | null;
 }
 
 export type CardioSessionRow = {
@@ -171,6 +197,14 @@ export type CardioSessionRow = {
   /** Set when a corrected import replaced this row. NULL means live (0011). */
   superseded_at: string | null;
   superseded_by: string | null;
+  /**
+   * External identity (0016). UNIQUE per user with external_source, so
+   * re-syncing an imported session updates one row rather than doubling the
+   * day's cardio minutes.
+   */
+  external_source: string | null;
+  external_id: string | null;
+  external_updated_at: string | null;
 }
 
 export type ExerciseRow = {
@@ -268,6 +302,18 @@ export type SyncRunRow = {
   error: string | null;
   cursor_before: string | null;
   cursor_after: string | null;
+  /**
+   * Provider-neutral counters (0016). The eight above name workouts and
+   * exercises because Hevy was the only sync. A run that reads data points
+   * across a dozen data types fills these instead, and each provider fills the
+   * set that describes what it actually did rather than overloading the other.
+   */
+  records_created: number;
+  records_updated: number;
+  records_unchanged: number;
+  records_withdrawn: number;
+  /** Per-data-type outcome and backfill checkpoints. Makes a backfill resumable. */
+  detail: Record<string, unknown>;
 }
 
 export type DailyMetricsRow = {
@@ -295,6 +341,25 @@ export type DailyMetricsRow = {
   fiber_g: number | null;
   fruit_veg_servings: number | null;
   training_sessions: number | null;
+  /** 0016. All nullable; NULL means not logged, never zero (spec §33). */
+  body_fat_pct: number | null;
+  vo2_max: number | null;
+  distance_km: number | null;
+  floors: number | null;
+  active_minutes: number | null;
+  /**
+   * The provider's own zone accounting, against its own boundaries. NOT the
+   * same measurement as zone2_minutes, which uses the user's definitions.
+   */
+  active_zone_minutes: number | null;
+  respiratory_rate: number | null;
+  oxygen_saturation_pct: number | null;
+  rem_minutes: number | null;
+  deep_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  /** Signed. NULL means not measured. */
+  sleep_temperature_delta_c: number | null;
   provenance: Record<string, unknown>;
 }
 
@@ -369,6 +434,118 @@ export type RecommendationRow = {
   resolution_note: string | null;
 }
 
+/**
+ * A Google Health OAuth connection (0016). One per user.
+ *
+ * NOTHING HERE IS EVER SENT TO THE BROWSER. The ciphertext columns are read
+ * only by the server-side token module, which decrypts with a key that lives in
+ * the environment and never in the database.
+ */
+export type GoogleHealthConnectionRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  health_user_id: string | null;
+  google_user_id: string | null;
+  /** What the user actually consented to, which may be less than was asked. */
+  granted_scopes: string[];
+  refresh_token_ciphertext: string | null;
+  refresh_token_iv: string | null;
+  refresh_token_tag: string | null;
+  access_token_expires_at: string | null;
+  connected_at: string;
+  last_refresh_at: string | null;
+  /** Set when authorisation ended. The row stays: that is history. */
+  revoked_at: string | null;
+  last_error: string | null;
+}
+
+/** The provider's record, verbatim, before interpretation (0016). */
+export type ExternalObservationRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  provider: string;
+  /** Google's own data type id, kebab-case, exactly as it appears in the path. */
+  data_type: string;
+  external_id: string;
+  external_updated_at: string | null;
+  record_type: 'SAMPLE' | 'INTERVAL' | 'DAILY' | 'SESSION';
+  observed_at: string | null;
+  interval_start: string | null;
+  interval_end: string | null;
+  utc_offset_seconds: number | null;
+  local_date: string;
+  /** Deliberately signed: a sleep temperature deviation can be negative. */
+  value: number | null;
+  unit: string | null;
+  payload: Record<string, unknown>;
+  /** NULL means supported, stored, and not yet mapped - never discarded. */
+  mapped_to: string | null;
+  mapped_id: string | null;
+  superseded_at: string | null;
+  superseded_by: string | null;
+}
+
+/** Heart-rate zone boundaries and the method that produced them (0016). */
+export type HrZoneDefinitionRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  zone: number;
+  lower_bpm: number;
+  /** NULL on the top zone, which has no ceiling. */
+  upper_bpm: number | null;
+  method: 'MEASURED_MAX' | 'ESTIMATED_MAX' | 'MANUAL' | 'PROVIDER';
+  max_heart_rate: number | null;
+  derived_from: string | null;
+}
+
+/** Physiology recorded during a training session by a provider (0016). */
+export type SessionTelemetryRow = {
+  id: string;
+  user_id: string;
+  session_id: string;
+  created_at: string;
+  updated_at: string;
+  provider: string;
+  external_id: string | null;
+  match_method: 'INTERVAL_OVERLAP' | 'INTERVAL_ONLY' | 'NONE';
+  match_confidence: number | null;
+  overlap_seconds: number | null;
+  hr_sample_count: number | null;
+  /** How much of the session heart rate covers. An average over 12% is caveated. */
+  hr_coverage_pct: number | null;
+  average_hr: number | null;
+  min_hr: number | null;
+  max_hr: number | null;
+  /** Minutes per zone 1-5, computed against the user's own definitions. */
+  zone_minutes: Record<string, unknown>;
+  /** The provider's own buckets, in its own vocabulary and units. */
+  provider_zone_minutes: Record<string, unknown>;
+  active_zone_minutes: number | null;
+  calories_kcal: number | null;
+  distance_km: number | null;
+  steps: number | null;
+}
+
+/** A (day, field) whose canonical value was authored by hand (0016). */
+export type CanonicalFieldPinRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  local_date: string;
+  /** The canonical field name as the resolver knows it, e.g. 'weightKg'. */
+  field: string;
+  pinned_observation_id: string | null;
+  pinned_at: string;
+  /** When the pin was lifted. Kept rather than deleted. */
+  cleared_at: string | null;
+  reason: string | null;
+}
+
 /** Insert shapes: server-defaulted columns are optional. */
 type Insertable<T, Defaulted extends keyof T> = Omit<T, Defaulted> &
   Partial<Pick<T, Defaulted>>;
@@ -386,6 +563,26 @@ type SessionDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
 type ObservationDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
 
 /**
+ * The columns 0016 added to sleep_records and cardio_sessions.
+ *
+ * OPTIONAL AT INSERT, unlike everything else on these tables. The general rule
+ * here is that a writer must state every column, including the nulls, so that
+ * re-writing a row cannot leave a stale value behind. These are the exception
+ * because they were added to tables that already had writers: the manual sleep
+ * logger has nothing to say about REM minutes and never will, and requiring it
+ * to write eleven explicit nulls would be ceremony rather than safety. The
+ * provider that DOES know them writes them all, every time.
+ */
+type SleepExtras =
+  | 'rem_minutes' | 'deep_minutes' | 'light_minutes' | 'awake_minutes'
+  | 'short_awakenings' | 'temperature_delta_c' | 'respiratory_rate'
+  | 'oxygen_saturation_pct'
+  | 'external_source' | 'external_id' | 'external_updated_at';
+
+/** The external identity 0016 gave cardio_sessions. Same reasoning. */
+type CardioExtras = 'external_source' | 'external_id' | 'external_updated_at';
+
+/**
  * And for workout_sets since 0014. A set is always inserted live and always
  * inserted with an identity of its own; marking one superseded is a later,
  * separate write, so an "already removed" set cannot be created.
@@ -400,7 +597,9 @@ type SyncRunDefaults =
   | 'id' | 'created_at' | 'started_at' | 'finished_at' | 'status' | 'triggered_by'
   | 'events_found' | 'workouts_created' | 'workouts_updated' | 'workouts_unchanged'
   | 'workouts_deleted' | 'exercises_created' | 'exercises_matched' | 'records_failed'
-  | 'warnings' | 'error' | 'cursor_before' | 'cursor_after';
+  | 'warnings' | 'error' | 'cursor_before' | 'cursor_after'
+  | 'records_created' | 'records_updated' | 'records_unchanged'
+  | 'records_withdrawn' | 'detail';
 
 type TableDef<Row, Insert = Row, Update = Partial<Insert>> = {
   Row: Row;
@@ -424,10 +623,10 @@ export type Database = {
         NutritionLogRow, Insertable<NutritionLogRow, ObservationDefaults | 'logged_at'>
       >;
       sleep_records: TableDef<
-        SleepRecordRow, Insertable<SleepRecordRow, ObservationDefaults>
+        SleepRecordRow, Insertable<SleepRecordRow, ObservationDefaults | SleepExtras>
       >;
       cardio_sessions: TableDef<
-        CardioSessionRow, Insertable<CardioSessionRow, SessionDefaults>
+        CardioSessionRow, Insertable<CardioSessionRow, SessionDefaults | CardioExtras>
       >;
       exercises: TableDef<ExerciseRow, Insertable<ExerciseRow, 'created_at' | 'updated_at'>>;
       workout_sessions: TableDef<
@@ -445,6 +644,31 @@ export type Database = {
       >;
       recommendations: TableDef<
         RecommendationRow, Insertable<RecommendationRow, 'id' | 'created_at'>
+      >;
+      google_health_connections: TableDef<
+        GoogleHealthConnectionRow,
+        Insertable<
+          GoogleHealthConnectionRow,
+          ServerDefaults | 'connected_at' | 'granted_scopes'
+        >
+      >;
+      external_observations: TableDef<
+        ExternalObservationRow,
+        Insertable<ExternalObservationRow, ObservationDefaults | 'payload'>
+      >;
+      hr_zone_definitions: TableDef<
+        HrZoneDefinitionRow, Insertable<HrZoneDefinitionRow, ServerDefaults>
+      >;
+      session_telemetry: TableDef<
+        SessionTelemetryRow,
+        Insertable<
+          SessionTelemetryRow,
+          ServerDefaults | 'zone_minutes' | 'provider_zone_minutes'
+        >
+      >;
+      canonical_field_pins: TableDef<
+        CanonicalFieldPinRow,
+        Insertable<CanonicalFieldPinRow, 'id' | 'created_at' | 'pinned_at'>
       >;
     };
     Views: { [_ in never]: never };

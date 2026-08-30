@@ -38,6 +38,8 @@ import { logCardio, type ActionResult } from '@/app/actions/log';
 // 'use server' module must be an async server action, so a plain object and a
 // type guard cannot be declared here.
 import { WITHDRAWABLE, isWithdrawableTable } from '@/lib/health/corrections';
+import { clearFieldPin, isPinnableField, PINNABLE_FIELDS } from '@/lib/data/pins';
+import { isLocalDate } from '@/lib/normalization/dates';
 import type { LocalDate } from '@/lib/types';
 
 function revalidateDay(date: LocalDate) {
@@ -310,4 +312,51 @@ export async function correctCardioSession(formData: FormData): Promise<ActionRe
     ok: true,
     message: 'Corrected. The session it replaces is kept on record and no longer counts.',
   };
+}
+
+/**
+ * Lifts the pin on a field the user authored by hand.
+ *
+ * A pin keeps an imported reading from becoming the day's canonical value
+ * (lib/data/pins.ts). Lifting it lets recency decide again, which is the normal
+ * rule everywhere else - so this is how a user says "actually, trust the watch
+ * for this one after all".
+ *
+ * The pin is CLEARED, not deleted, and the audit log records it: a number that
+ * changes on a day the user has long since forgotten about deserves a trail
+ * back to the moment they asked for it to.
+ */
+export async function clearCanonicalFieldPin(input: {
+  date: string;
+  field: string;
+}): Promise<ActionResult> {
+  const session = await requireUser();
+  if (session === null) return { ok: false, message: 'Not signed in.' };
+  const { supabase, userId } = session;
+
+  if (!isLocalDate(input.date)) return { ok: false, message: 'That is not a date.' };
+  if (!isPinnableField(input.field)) {
+    return { ok: false, message: 'That is not a field that can be pinned.' };
+  }
+
+  const cleared = await clearFieldPin(supabase, userId, input.date, input.field);
+  if (!cleared.ok) return cleared;
+
+  await supabase.from('system_events').insert({
+    user_id: userId,
+    kind: 'CANONICAL_FIELD_UNPINNED',
+    summary: `${PINNABLE_FIELDS[input.field]} on ${input.date} is no longer pinned `
+      + 'to your own entry.',
+    detail: { date: input.date, field: input.field },
+    previous_value: null,
+    new_value: null,
+    reason: 'You lifted the pin, so imported readings can resolve this field again.',
+    status: 'RECORDED',
+  });
+
+  // The pin changed which observation is canonical, so the day has to be
+  // resolved again - otherwise the change is stored and invisible.
+  await rebuildDailyMetrics(supabase, userId, input.date);
+  revalidateDay(input.date);
+  return { ok: true, message: cleared.message };
 }

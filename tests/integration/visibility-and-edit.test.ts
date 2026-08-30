@@ -237,10 +237,23 @@ describe('a full imported day is visible, and every part of it can be corrected'
         'steps', 'trainingSessions', 'waistCm', 'weightKg', 'workoutMinutes',
         'zone2Minutes',
       ]);
-      // The four that were genuinely not imported stay null, not zero.
+      /**
+       * Everything genuinely not in the paste stays NULL, not zero.
+       *
+       * Most of this list is the wearable physiology migration 0016 added -
+       * body fat, VO2 max, distance, floors, sleep stages, respiratory rate,
+       * blood oxygen, skin temperature. A pasted report says nothing about any
+       * of them, and the whole point of this assertion is that a day which was
+       * imported from text reports them as unmeasured rather than as zero.
+       * A zero here would mean "you got no REM sleep", which the paste never
+       * claimed and nobody measured.
+       */
       const absent = summary.filter((f) => f.value === null).map((f) => f.key);
       expect(absent.sort()).toEqual([
-        'fruitVegServings', 'sleepScore', 'totalCaloriesBurned',
+        'activeMinutes', 'activeZoneMinutes', 'awakeMinutes', 'bodyFatPct',
+        'deepMinutes', 'distanceKm', 'floors', 'fruitVegServings', 'lightMinutes',
+        'oxygenSaturationPct', 'remMinutes', 'respiratoryRate', 'sleepScore',
+        'sleepTemperatureDeltaC', 'totalCaloriesBurned', 'vo2Max',
       ]);
     });
 

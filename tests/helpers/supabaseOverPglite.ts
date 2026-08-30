@@ -377,6 +377,9 @@ class UpsertBuilder implements PromiseLike<Result<null>> {
 const JSONB_COLUMNS = new Set([
   'confirmed', 'data_quality_components', 'detail', 'evidence', 'metrics',
   'nutrition_components', 'parameters', 'parsed', 'provenance', 'warnings',
+  // 0016. granted_scopes is deliberately absent: it is text[], not jsonb, and
+  // listing it here would write '["a"]' into a Postgres array column.
+  'payload', 'zone_minutes', 'provider_zone_minutes',
 ]);
 
 /** A Postgres array literal: {"a","b"}. Quoted so a comma cannot split a value. */

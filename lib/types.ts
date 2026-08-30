@@ -223,6 +223,30 @@ export interface DailyMetrics {
   sleepDurationMinutes: number | null;
   sleepScore: number | null;
 
+  /**
+   * From migration 0016. Every one is nullable and NULL means NOT MEASURED -
+   * a device that does not track blood oxygen leaves it null, which is not the
+   * same statement as a reading of zero (§33).
+   */
+  bodyFatPct: number | null;
+  vo2Max: number | null;
+  distanceKm: number | null;
+  floors: number | null;
+  activeMinutes: number | null;
+  /**
+   * The provider's own zone accounting, against its own boundaries. NOT
+   * interchangeable with zone2Minutes, which uses the user's definitions.
+   */
+  activeZoneMinutes: number | null;
+  respiratoryRate: number | null;
+  oxygenSaturationPct: number | null;
+  remMinutes: number | null;
+  deepMinutes: number | null;
+  lightMinutes: number | null;
+  awakeMinutes: number | null;
+  /** Signed: a colder night than baseline is negative and is a measurement. */
+  sleepTemperatureDeltaC: number | null;
+
   caloriesConsumed: number | null;
   proteinG: number | null;
   carbsG: number | null;

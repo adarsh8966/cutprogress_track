@@ -13,6 +13,7 @@ import type { DailyMetrics, UserProfile } from '@/lib/types';
 import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { addDays, dateRange } from '@/lib/normalization/dates';
 import { feetInchesToCm, lbToKg } from '@/lib/normalization/units';
+import { emptyDay } from '@/lib/defaults';
 
 export const FIXTURE_END = '2026-11-20';
 export const FIXTURE_DAYS = 120;
@@ -55,9 +56,20 @@ function seeded(seed: number): () => number {
 
 export function fixtureDays(): DailyMetrics[] {
   const random = seeded(20260828);
+  /**
+   * A SECOND, INDEPENDENT STREAM for the wearable metrics.
+   *
+   * Not `random()` again. These generators are seeded and deterministic, so
+   * every draw taken from `random` shifts every later draw - and adding one
+   * here would silently change the weight, nutrition and sleep values this
+   * fixture has produced since it was written. That would move numbers in the
+   * Context Pack snapshot that nothing in this change touches, and a snapshot
+   * diff full of unrelated movement is one nobody reads carefully.
+   */
+  const wearable = seeded(20260916);
   const dates = dateRange(FIXTURE_START, FIXTURE_END);
 
-  return dates.map((localDate, i) => {
+  return dates.map((localDate, i): DailyMetrics => {
     // Losing ~1.2 lb/week with day-to-day water noise on top.
     const trendKg = lbToKg(205) - i * (lbToKg(1.2) / 7);
     const noise = (random() - 0.5) * 0.9;
@@ -68,7 +80,16 @@ export function fixtureDays(): DailyMetrics[] {
     const dayOfWeek = i % 7;
     const isRestDay = dayOfWeek === 2 || dayOfWeek === 6;
 
-    return {
+    /**
+     * THE BASE DAY IS BUILT FIRST, AND EXACTLY AS IT ALWAYS WAS.
+     *
+     * Every field below draws from `random` in the same order it has since this
+     * fixture was written, so the weight, nutrition and sleep values - and the
+     * Context Pack snapshot built on them - are unchanged by this addition. The
+     * wearable metrics are added afterwards, from their own stream.
+     */
+    const base: DailyMetrics = {
+      ...emptyDay(localDate),
       localDate,
       weightKg: weighed ? Math.round((trendKg + noise) * 1000) / 1000 : null,
       // Waist is measured weekly, which is a complete cadence, not a gap.
@@ -90,6 +111,44 @@ export function fixtureDays(): DailyMetrics[] {
       fiberG: loggedNutrition ? Math.round(22 + random() * 14) : null,
       fruitVegServings: loggedNutrition ? Math.round(2 + random() * 4) : null,
       trainingSessions: isRestDay ? 0 : 1,
+    };
+
+    /**
+     * What a wearable adds, drawn from the second stream.
+     *
+     * `wore` gates them together rather than field by field: the device is
+     * either on the wrist overnight or it is not, and a night with a
+     * respiratory rate but no sleep stages is not a shape a real device
+     * produces. A fixture that cannot happen proves nothing about code that
+     * has to handle what can.
+     */
+    const wore = wearable() > 0.1;
+    const sleepMinutes = base.sleepDurationMinutes ?? 0;
+
+    return {
+      ...base,
+      // Stages partition the night, so they are shares of it rather than
+      // independent draws: three unrelated numbers would not add up to the
+      // duration sitting beside them.
+      remMinutes: wore ? Math.round(sleepMinutes * 0.21) : null,
+      deepMinutes: wore ? Math.round(sleepMinutes * 0.16) : null,
+      lightMinutes: wore ? Math.round(sleepMinutes * 0.63) : null,
+      awakeMinutes: wore ? Math.round(wearable() * 22) : null,
+      respiratoryRate: wore ? Math.round((13.5 + wearable() * 2.5) * 10) / 10 : null,
+      oxygenSaturationPct: wore ? Math.round((95 + wearable() * 3) * 10) / 10 : null,
+      // Signed, and sometimes negative: a colder night than baseline is a real
+      // reading, and a fixture that only ever produces positives would let a
+      // formatter that drops the sign pass.
+      sleepTemperatureDeltaC: wore ? Math.round((wearable() * 1.6 - 0.8) * 100) / 100 : null,
+      // Weekly-ish, like waist: a body-composition reading is a deliberate act.
+      bodyFatPct: dayOfWeek === 0 ? Math.round((18 - i * 0.01) * 10) / 10 : null,
+      vo2Max: dayOfWeek === 3 ? Math.round((44 + wearable() * 2) * 10) / 10 : null,
+      distanceKm: Math.round((6.4 + wearable() * 2.2) * 1000) / 1000,
+      floors: Math.round(6 + wearable() * 10),
+      activeMinutes: Math.round(38 + wearable() * 30),
+      activeZoneMinutes: dayOfWeek === 2 || dayOfWeek === 5
+        ? Math.round(28 + wearable() * 18)
+        : Math.round(wearable() * 12),
     };
   });
 }

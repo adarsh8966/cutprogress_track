@@ -23,6 +23,7 @@ import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, DerivedFigure, formatNumber } from '@/components/ui/primitives';
 import { Evidence } from '@/components/ui/Evidence';
+import { Disclosure } from '@/components/ui/Disclosure';
 import { BarSeries } from '@/components/charts/BarSeries';
 import { LogSleepForm, LogCardioForm, LogMetricsForm } from '@/components/dashboard/LogRecoveryForms';
 import { recoverySummary } from '@/lib/analytics/recovery';
@@ -212,6 +213,103 @@ export default async function RecoveryPage() {
           <Evidence derived={activeCalories.average30} />
         </Card>
       </div>
+
+      {/*
+        The overnight physiology, behind a disclosure.
+        
+        Seven more cards on the main grid would bury sleep and heart rate under
+        detail that is worth having and is not what the page is for. Folded
+        away, it is one click for the night someone actually wants to look at -
+        the same bargain the Training page strikes with its analytics.
+      */}
+      <Disclosure summary="Overnight physiology">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card title="Deep sleep">
+            <DerivedFigure
+              derived={recovery.deepMinutes.latest}
+              format={formatSleep}
+              size="sm"
+              sub={measuredOn(recovery.deepMinutes.latest)}
+            />
+            <Evidence derived={recovery.deepMinutes.latest} />
+          </Card>
+          <Card title="REM sleep">
+            <DerivedFigure
+              derived={recovery.remMinutes.latest}
+              format={formatSleep}
+              size="sm"
+              sub={measuredOn(recovery.remMinutes.latest)}
+            />
+            <Evidence derived={recovery.remMinutes.latest} />
+          </Card>
+          <Card title="Light sleep">
+            <DerivedFigure
+              derived={recovery.lightMinutes.latest}
+              format={formatSleep}
+              size="sm"
+              sub={measuredOn(recovery.lightMinutes.latest)}
+            />
+            <Evidence derived={recovery.lightMinutes.latest} />
+          </Card>
+          <Card title="Awake in the night">
+            <DerivedFigure
+              derived={recovery.awakeMinutes.latest}
+              format={formatSleep}
+              size="sm"
+              sub={measuredOn(recovery.awakeMinutes.latest)}
+            />
+            <Evidence derived={recovery.awakeMinutes.latest} />
+          </Card>
+          <Card title="Respiratory rate">
+            <DerivedFigure
+              derived={recovery.respiratoryRate.latest}
+              format={(v) => formatNumber(v, 1)}
+              unit="breaths/min"
+              size="sm"
+              sub={measuredOn(recovery.respiratoryRate.latest)}
+            />
+            <Evidence derived={recovery.respiratoryRate.latest} />
+          </Card>
+          <Card title="Blood oxygen">
+            <DerivedFigure
+              derived={recovery.oxygenSaturation.latest}
+              format={(v) => formatNumber(v, 1)}
+              unit="%"
+              size="sm"
+              sub={measuredOn(recovery.oxygenSaturation.latest)}
+            />
+            <Evidence derived={recovery.oxygenSaturation.latest} />
+          </Card>
+          <Card title="Skin temperature">
+            {/* Signed, and shown signed: +0.4 and −0.4 are different nights,
+                and a bare "0.4" would say the same thing for both. */}
+            <DerivedFigure
+              derived={recovery.sleepTemperatureDelta.latest}
+              format={(v) => `${v > 0 ? '+' : ''}${formatNumber(v, 2)}`}
+              unit="°C from baseline"
+              size="sm"
+              sub={measuredOn(recovery.sleepTemperatureDelta.latest)}
+            />
+            <Evidence derived={recovery.sleepTemperatureDelta.latest} />
+          </Card>
+          <Card title="Active zone minutes">
+            <DerivedFigure
+              derived={recovery.activeZoneMinutes.latest}
+              format={whole}
+              unit="min"
+              size="sm"
+              sub={measuredOn(recovery.activeZoneMinutes.latest)}
+            />
+            <Evidence derived={recovery.activeZoneMinutes.latest} />
+          </Card>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          These come from a connected wearable. Active zone minutes are counted
+          against the provider&rsquo;s own heart-rate zones, which are not the
+          same boundaries as your Zone 2 setting — the two numbers answer
+          different questions and are kept apart.
+        </p>
+      </Disclosure>
 
       <Card title="Sleep, last 30 days">
         <BarSeries

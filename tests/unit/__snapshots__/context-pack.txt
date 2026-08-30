@@ -91,6 +91,13 @@ WAIST TREND
 - Measurements used: 12 over 84 days
 - Confidence: MODERATE
 
+BODY COMPOSITION AND CARDIO FITNESS
+----------------------------------------------------
+- Latest body fat: 16.8% [confidence: high]
+- 90-day average body fat: not computable - 5 day(s) of data exist but are not enough (Only 5 of 30 days carry data (17%), below the 50% needed to report a 30-day average.)
+- Latest VO2 max: 44.6 ml/kg/min [confidence: moderate]
+- 30-day average VO2 max: not computable - 4 day(s) of data exist but are not enough (Only 4 of 30 days carry data (13%), below the 50% needed to report a 30-day average.)
+
 NUTRITION
 ----------------------------------------------------
 - Calorie target: 1,950 kcal
@@ -116,6 +123,10 @@ ACTIVITY
 - Running sessions (last 28 days): 4
 - Running distance (last 28 days): 12.4 mi
 - Active calories (30-day average): 560 kcal
+- Daily distance (30-day average): 4.58 mi [confidence: high]
+- Active minutes (30-day average): 53 min [confidence: high]
+- Active zone minutes (30-day average): 13 min [confidence: high]
+- Floors climbed (30-day average): 11 [confidence: high]
 
 TRAINING
 ----------------------------------------------------
@@ -175,6 +186,13 @@ RECOVERY
 - Latest total calories burned: not logged (No measurement in the 30 days ending 2026-11-20.)
 - 30-day average total calories burned: not logged (No measurements in the 30 days ending 2026-11-20.)
 - Rest days (last 28): 8
+- Latest deep sleep: 1h 9m [confidence: high]
+- Latest REM sleep: 1h 31m [confidence: high]
+- Latest light sleep: 4h 33m [confidence: high]
+- Latest awake in the night: 0h 8m [confidence: high]
+- 30-day average respiratory rate: 14.6 breaths/min [confidence: high]
+- 30-day average blood oxygen: 96.3% [confidence: high]
+- Latest sleep skin temperature: -0.54 °C from baseline [confidence: high]
   Note: recovery data is informational. Poor sleep alone is not a reason to skip training.
 
 ADHERENCE

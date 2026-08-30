@@ -42,7 +42,19 @@ export type DayFieldUnit =
   | 'COUNT'
   | 'SERVINGS'
   | 'ZONE'
-  | 'SCORE';
+  | 'SCORE'
+  /** A percentage: body fat, blood oxygen. */
+  | 'PERCENT'
+  /** A per-minute rate: breaths, or millilitres of oxygen per kilogram. */
+  | 'RATE'
+  /**
+   * A SIGNED temperature difference from a baseline, in Celsius.
+   *
+   * Its own unit rather than a number with a suffix, because the sign is the
+   * information - a night above baseline and a night below it are different
+   * signals - and a formatter that drops it would report them identically.
+   */
+  | 'DELTA_C';
 
 export interface DayField {
   label: string;
@@ -112,6 +124,12 @@ export function formatDayField(field: DayField, units: DisplayUnits): string | n
       return `zone ${round(value, 0)}`;
     case 'SCORE':
       return `${round(value, 0)} / 100`;
+    case 'PERCENT':
+      return `${round(value, 1)}%`;
+    case 'RATE':
+      return `${round(value, 1)}`;
+    case 'DELTA_C':
+      return `${value > 0 ? '+' : ''}${round(value, 2)} °C`;
     case 'COUNT':
     default:
       return round(value, 0);
@@ -396,6 +414,42 @@ export function canonicalSummary(metrics: DailyMetrics): CanonicalField[] {
       value: metrics.restingHeartRate, unit: 'BPM',
     },
     { key: 'hrvMs', label: 'HRV', value: metrics.hrvMs, unit: 'MS' },
+
+    // From migration 0016. Listed here for the same reason as everything above
+    // it: /day/[date] is where a value's provenance is inspected, and a
+    // canonical field missing from this list is one whose source cannot be
+    // questioned.
+    { key: 'bodyFatPct', label: 'Body fat', value: metrics.bodyFatPct, unit: 'PERCENT' },
+    { key: 'vo2Max', label: 'VO2 max', value: metrics.vo2Max, unit: 'RATE' },
+    { key: 'distanceKm', label: 'Distance', value: metrics.distanceKm, unit: 'DISTANCE' },
+    { key: 'floors', label: 'Floors', value: metrics.floors, unit: 'COUNT' },
+    {
+      key: 'activeMinutes', label: 'Active time',
+      value: metrics.activeMinutes, unit: 'DURATION',
+    },
+    {
+      key: 'activeZoneMinutes', label: 'Active zone minutes',
+      value: metrics.activeZoneMinutes, unit: 'DURATION',
+    },
+    {
+      key: 'respiratoryRate', label: 'Respiratory rate',
+      value: metrics.respiratoryRate, unit: 'RATE',
+    },
+    {
+      key: 'oxygenSaturationPct', label: 'Blood oxygen',
+      value: metrics.oxygenSaturationPct, unit: 'PERCENT',
+    },
+    { key: 'remMinutes', label: 'REM sleep', value: metrics.remMinutes, unit: 'DURATION' },
+    { key: 'deepMinutes', label: 'Deep sleep', value: metrics.deepMinutes, unit: 'DURATION' },
+    { key: 'lightMinutes', label: 'Light sleep', value: metrics.lightMinutes, unit: 'DURATION' },
+    {
+      key: 'awakeMinutes', label: 'Awake in the night',
+      value: metrics.awakeMinutes, unit: 'DURATION',
+    },
+    {
+      key: 'sleepTemperatureDeltaC', label: 'Sleep skin temperature',
+      value: metrics.sleepTemperatureDeltaC, unit: 'DELTA_C',
+    },
 
     // Summed, not resolved (lib/data/canonicalise.ts).
     {
