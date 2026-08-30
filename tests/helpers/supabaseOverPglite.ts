@@ -121,7 +121,7 @@ function whereOf(filters: Filter[]): { sql: string; params: unknown[] } {
 /** Shared filter/ordering surface, so every builder accepts the same calls. */
 abstract class Filterable<T> implements PromiseLike<Result<T>> {
   protected readonly filters: Filter[] = [];
-  protected orderBy: { column: string; ascending: boolean } | null = null;
+  protected orderBy: { column: string; ascending: boolean; nullsFirst?: boolean }[] = [];
   protected rowLimit: number | null = null;
   protected mode: 'many' | 'single' | 'maybeSingle' = 'many';
 
@@ -164,8 +164,21 @@ abstract class Filterable<T> implements PromiseLike<Result<T>> {
     return this;
   }
 
-  order(column: string, options: { ascending: boolean }): this {
-    this.orderBy = { column, ascending: options.ascending };
+  /**
+   * Accumulates, as supabase-js does. It used to overwrite, so a query asking
+   * for `local_date desc, start_time desc` was silently answered by start_time
+   * alone - the harness quietly disagreeing with production about ordering,
+   * which is the kind of difference a test exists to catch rather than create.
+   */
+  order(
+    column: string,
+    options: { ascending: boolean; nullsFirst?: boolean },
+  ): this {
+    this.orderBy.push({
+      column,
+      ascending: options.ascending,
+      nullsFirst: options.nullsFirst,
+    });
     return this;
   }
 
@@ -185,8 +198,19 @@ abstract class Filterable<T> implements PromiseLike<Result<T>> {
   }
 
   protected suffix(): string {
-    const order = this.orderBy
-      ? ` order by ${ident(this.orderBy.column)} ${this.orderBy.ascending ? 'asc' : 'desc'}`
+    const order = this.orderBy.length
+      ? ` order by ${this.orderBy
+          .map((term) => {
+            const direction = term.ascending ? 'asc' : 'desc';
+            // Left unstated, Postgres puts nulls last when ascending and first
+            // when descending. Only spell it out when the caller did.
+            const nulls =
+              term.nullsFirst === undefined
+                ? ''
+                : ` nulls ${term.nullsFirst ? 'first' : 'last'}`;
+            return `${ident(term.column)} ${direction}${nulls}`;
+          })
+          .join(', ')}`
       : '';
     const limit = this.rowLimit === null ? '' : ` limit ${Number(this.rowLimit)}`;
     return `${order}${limit}`;

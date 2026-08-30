@@ -10,7 +10,7 @@
  * Only WORKING sets count toward volume and bests. Warm-ups are recorded but
  * excluded, otherwise adding warm-up sets would look like progress.
  */
-import type { Derived, LocalDate } from '@/lib/types';
+import type { Derived, Instant, LocalDate } from '@/lib/types';
 import { derived, insufficient } from '@/lib/types';
 import { compareDates, daysBetween } from '@/lib/normalization/dates';
 import { mean, roundTo } from './series';
@@ -57,6 +57,12 @@ export interface LoggedSet {
  * exercise, no reps, no weight and no RIR: the fields do not exist rather than
  * being null, because a session-level record cannot answer those questions
  * even in principle.
+ *
+ * It CAN answer "when", though, and now does: startTime and endTime carry the
+ * instants the session ran between, which is the one thing a summary records
+ * that `date` alone throws away - two sessions on one day are two different
+ * pieces of work, and until these were mapped nothing downstream could tell
+ * which came first.
  */
 export interface TrainingSession {
   id: string;
@@ -78,6 +84,21 @@ export interface TrainingSession {
   source: string;
   completed: boolean;
   importId: string | null;
+  /**
+   * When the session began and ended, as absolute instants.
+   *
+   * NULL is the ordinary case rather than a fault: a pasted summary records
+   * the day and nothing finer, and a session started here has no end until it
+   * has one. Both stay null in that case - a start is never inferred from the
+   * date, and an end is never inferred from a duration (spec §7, §33).
+   *
+   * `date` remains the authority on WHICH DAY a session belongs to. It was
+   * resolved in the user's timezone when the row was written (spec §40), and
+   * these are pure functions with no timezone to re-derive it with, so a day
+   * is never recomputed from a start time here.
+   */
+  startTime: Instant | null;
+  endTime: Instant | null;
 }
 
 export interface SessionTypeCount {
@@ -348,7 +369,14 @@ export interface Workout {
 }
 
 export interface ComposedTraining {
-  /** Most recent first. Sessions sharing a date keep the caller's order. */
+  /**
+   * Most recent first, and within one date the latest start first.
+   *
+   * A session whose start time was recorded sorts ahead of one whose was not:
+   * a measured time outranks an absent one, and no time is invented for the
+   * session that lacks it. Two sessions that are both untimed - or that started
+   * at the same instant - keep the order the caller supplied them in.
+   */
   workouts: Workout[];
   /**
    * Sets whose session was not among those supplied.
@@ -373,6 +401,19 @@ export interface ComposedTraining {
  * Nothing is measured that was not recorded either. The exercise order is the
  * source's, already resolved into exerciseIndex by the reader, and is not
  * re-derived here.
+ *
+ * ORDERING IS A STRICT TOTAL ORDER, deliberately. The obvious comparator -
+ * return 0 whenever either side has no start time - is INTRANSITIVE: an
+ * untimed session ties both a 10:00 one and an 08:00 one while those two do
+ * not tie each other, and Array.prototype.sort given an inconsistent
+ * comparator produces an order nobody specified. So the four rules below are
+ * total, and the caller's index breaks the last tie explicitly rather than
+ * leaning on sort stability:
+ *
+ *   1. later date first
+ *   2. within a date, a known start time before an unknown one
+ *   3. two known start times: the later one first
+ *   4. otherwise the order the caller supplied
  */
 export function composeTraining(
   sessions: TrainingSession[],
@@ -388,11 +429,33 @@ export function composeTraining(
   const known = new Set(sessions.map((s) => s.id));
   const unattachedSets = sets.filter((set) => !known.has(set.sessionId));
 
-  // A copy: sorting the caller's array in place would reorder a list that
-  // other figures on the same page are still reading.
-  const workouts = [...sessions]
-    .sort((a, b) => compareDates(b.date, a.date))
-    .map((session) => {
+  // Parsed, not string-compared: '...T22:00:00+00:00' and '...T22:00:00Z' are
+  // the same instant and do not sort the same as text. The reader normalises
+  // what it produces, but this is a pure function anyone may hand a session
+  // built by hand.
+  const startedAt = (session: TrainingSession): number | null =>
+    session.startTime === null ? null : Date.parse(session.startTime);
+
+  // Decorated with the caller's index, which also supplies the copy: sorting
+  // the caller's array in place would reorder a list that other figures on the
+  // same page are still reading.
+  const workouts = sessions
+    .map((session, index) => ({ session, index }))
+    .sort((a, b) => {
+      const byDate = compareDates(b.session.date, a.session.date);
+      if (byDate !== 0) return byDate;
+
+      const at = startedAt(a.session);
+      const bt = startedAt(b.session);
+      // A recorded start outranks an absent one. Neither session is moved
+      // relative to the other on a time that was never measured.
+      if (at === null && bt !== null) return 1;
+      if (at !== null && bt === null) return -1;
+      if (at !== null && bt !== null && at !== bt) return bt - at;
+
+      return a.index - b.index;
+    })
+    .map(({ session }) => {
       const own = bySession.get(session.id) ?? [];
       const exercises = groupByExercise(own);
       return {

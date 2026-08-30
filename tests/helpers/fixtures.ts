@@ -174,6 +174,11 @@ export function fixtureSessions(): TrainingSession[] {
         source: summaryOnly ? 'IMPORT_TEXT' : 'MANUAL',
         completed: true,
         importId: null,
+        // Date-only, deliberately. This fixture is what the Context Pack
+        // snapshot is taken over, so leaving it timeless keeps that snapshot a
+        // real assertion that mapping start and end times moved no figure.
+        startTime: null,
+        endTime: null,
       };
     });
 }

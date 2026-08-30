@@ -32,6 +32,8 @@ function session(overrides: Partial<TrainingSession> = {}): TrainingSession {
     source: 'IMPORT_TEXT',
     completed: true,
     importId: 'import-1',
+    startTime: null,
+    endTime: null,
     ...overrides,
   };
 }
@@ -235,5 +237,57 @@ describe('multi-day imports', () => {
     expect(result.value!.totalSessions).toBe(5);
     expect(result.value!.totalMinutes).toBe(30 + 31 + 32 + 33 + 34);
     expect(result.value!.totalCalories).toBe(100 + 101 + 102 + 103 + 104);
+  });
+});
+
+/**
+ * Mapping start_time and end_time into TrainingSession added two fields that
+ * no session-level formula reads. That is the intent, and it is worth pinning:
+ * a summary counts sessions, sums minutes and weights heart rate by duration,
+ * and none of those questions has an answer that depends on what o'clock it
+ * was. If a figure here ever starts moving with a timestamp, something has
+ * quietly begun deriving a measurement from the interval.
+ */
+describe('session timing is inert to the session-level figures', () => {
+  const timings = [
+    { startTime: '2026-08-27T17:00:00Z', endTime: '2026-08-27T18:04:00Z' },
+    { startTime: '2026-08-28T06:30:00Z', endTime: null },
+  ];
+
+  it('summarises a timed history exactly as it summarises a date-only one', () => {
+    const dateOnly = summariseSessions([AUG_27, AUG_28], []);
+    const timed = summariseSessions(
+      [{ ...AUG_27, ...timings[0]! }, { ...AUG_28, ...timings[1]! }],
+      [],
+    );
+
+    expect(timed.value).toEqual(dateOnly.value);
+    expect(timed.confidence).toBe(dateOnly.confidence);
+    expect(timed.inputs).toEqual(dateOnly.inputs);
+  });
+
+  it('still reports the recorded duration, never the interval', () => {
+    // The interval below is 64 minutes wide and the session reported 58. The
+    // reported figure is the measurement; the interval is not a second opinion.
+    const withInterval = {
+      ...AUG_28,
+      startTime: '2026-08-28T17:00:00Z',
+      endTime: '2026-08-28T18:04:00Z',
+    };
+    expect(summariseSessions([withInterval], []).value!.totalMinutes).toBe(58);
+  });
+
+  it('leaves a duration null when only the interval could supply one', () => {
+    const noDuration = {
+      ...AUG_28,
+      durationMinutes: null,
+      startTime: '2026-08-28T17:00:00Z',
+      endTime: '2026-08-28T18:04:00Z',
+    };
+    const result = summariseSessions([noDuration], []);
+    // One session, and no minutes: the session happened, its length was not
+    // reported, and 64 is not an answer anybody measured (spec §7, §33).
+    expect(result.value!.totalSessions).toBe(1);
+    expect(result.value!.totalMinutes).toBeNull();
   });
 });

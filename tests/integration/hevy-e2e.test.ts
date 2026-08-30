@@ -153,6 +153,42 @@ describe('Hevy end to end, to the figures on screen', () => {
     });
   }
 
+  /**
+   * The round trip the unit tests cannot prove on their own: Hevy's instants
+   * through the mapper, into a timestamptz column, back out of a real Postgres
+   * driver - which returns a Date object here where PostgREST returns text -
+   * and through toInstant into the domain. Both columns were written on this
+   * path long before anything read them.
+   */
+  it('carries a synced session\'s start and end times all the way back', async () => {
+    const { sessions } = await read();
+    const second = sessions.find((session) => session.date === DAY_TWO)!;
+
+    expect(second.startTime).toBe('2026-08-29T22:00:00.000Z');
+    expect(second.endTime).toBe('2026-08-29T23:04:00.000Z');
+
+    // And the day is still the user's own. 22:00 UTC is 18:00 in New York on
+    // the 29th, so local_date decides the day and the instant does not move it.
+    expect(second.date).toBe('2026-08-29');
+  });
+
+  it('orders two sessions on one day by when they actually started', async () => {
+    const { sessions, sets } = await read();
+    // A second workout the same evening, three hours after the first. Composed
+    // from the same sessions the page reads, in the order the page shows them.
+    const later = {
+      ...sessions.find((session) => session.date === DAY_TWO)!,
+      id: 'later-that-day',
+      startTime: '2026-08-30T01:00:00Z',
+      endTime: '2026-08-30T02:00:00Z',
+    };
+    const onDayTwo = composeTraining([...sessions, later], sets)
+      .workouts.filter((workout) => workout.session.date === DAY_TWO);
+
+    expect(onDayTwo.map((workout) => workout.session.id))
+      .toEqual(['later-that-day', sessions.find((s) => s.date === DAY_TWO)!.id]);
+  });
+
   it('reaches the Training page as sessions AND as sets', () => {
     return read().then(({ sessions, sets }) => {
       expect(sessions).toHaveLength(2);

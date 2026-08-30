@@ -39,6 +39,8 @@ function session(overrides: Partial<TrainingSession> = {}): TrainingSession {
     source: 'HEVY',
     completed: true,
     importId: null,
+    startTime: null,
+    endTime: null,
     ...overrides,
   };
 }
@@ -147,19 +149,100 @@ describe('composeTraining: the order is the source’s', () => {
     expect(workouts.map((w) => w.session.id)).toEqual(['b', 'c', 'a']);
   });
 
-  it('keeps two sessions on the same day in the order it was given them', () => {
+  it('keeps two untimed sessions on the same day in the order it was given them', () => {
     const { workouts } = composeTraining(
       [
-        session({ id: 'morning', date: '2026-08-29' }),
-        session({ id: 'evening', date: '2026-08-29' }),
+        session({ id: 'first', date: '2026-08-29', startTime: null }),
+        session({ id: 'second', date: '2026-08-29', startTime: null }),
       ],
       [],
     );
 
-    // start_time is not mapped into TrainingSession, so the true order within
-    // a day is not knowable here. A stable sort states that by preserving what
-    // it was handed rather than inventing a sequence.
-    expect(workouts.map((w) => w.session.id)).toEqual(['morning', 'evening']);
+    // Neither recorded a start, so which came first is genuinely not knowable.
+    // Preserving what it was handed states that; inventing a sequence would
+    // claim an order nothing measured.
+    expect(workouts.map((w) => w.session.id)).toEqual(['first', 'second']);
+  });
+
+  it('orders two sessions on one day by the time they actually started', () => {
+    const { workouts } = composeTraining(
+      [
+        session({ id: 'morning', date: '2026-08-29', startTime: '2026-08-29T07:15:00Z' }),
+        session({ id: 'evening', date: '2026-08-29', startTime: '2026-08-29T18:30:00Z' }),
+      ],
+      [],
+    );
+
+    // Latest first, the same direction the list runs in across days. The
+    // sessions were handed over earliest-first, so this fails if the start
+    // times are ignored.
+    expect(workouts.map((w) => w.session.id)).toEqual(['evening', 'morning']);
+  });
+
+  it('compares start times as instants, not as text', () => {
+    const { workouts } = composeTraining(
+      [
+        // The same two moments an hour apart, written with different offsets.
+        // 14:30-04:00 is 18:30Z; 09:15+02:00 is 07:15Z. Sorted as strings,
+        // '09:15' precedes '14:30' and the pair comes back the wrong way up.
+        session({ id: 'morning', date: '2026-08-29', startTime: '2026-08-29T09:15:00+02:00' }),
+        session({ id: 'evening', date: '2026-08-29', startTime: '2026-08-29T14:30:00-04:00' }),
+      ],
+      [],
+    );
+
+    expect(workouts.map((w) => w.session.id)).toEqual(['evening', 'morning']);
+  });
+
+  it('puts a session whose start was recorded ahead of one whose was not', () => {
+    const timed = session({ id: 'timed', date: '2026-08-29', startTime: '2026-08-29T18:30:00Z' });
+    const untimed = session({ id: 'untimed', date: '2026-08-29', startTime: null });
+
+    // Asserted from BOTH input orders. A comparator that leant on stability
+    // would pass one of these and fail the other, so the pair is the test.
+    expect(composeTraining([timed, untimed], []).workouts.map((w) => w.session.id))
+      .toEqual(['timed', 'untimed']);
+    expect(composeTraining([untimed, timed], []).workouts.map((w) => w.session.id))
+      .toEqual(['timed', 'untimed']);
+  });
+
+  /**
+   * The intransitivity case, and the reason the comparator is a strict total
+   * order rather than "return 0 when either side has no time".
+   *
+   * Under that simpler rule the untimed session ties BOTH timed ones while the
+   * timed pair does not tie each other, so the comparator contradicts itself
+   * and the result depends on which permutation the caller happened to supply.
+   * Every ordering of these three inputs must produce one answer.
+   */
+  it('returns one order for the same day however the sessions arrive', () => {
+    const sessions = [
+      session({ id: 'untimed', date: '2026-08-29', startTime: null }),
+      session({ id: 'ten', date: '2026-08-29', startTime: '2026-08-29T10:00:00Z' }),
+      session({ id: 'eight', date: '2026-08-29', startTime: '2026-08-29T08:00:00Z' }),
+    ];
+
+    const permutations = [
+      [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+    ];
+    for (const order of permutations) {
+      const { workouts } = composeTraining(order.map((i) => sessions[i]!), []);
+      expect(workouts.map((w) => w.session.id)).toEqual(['ten', 'eight', 'untimed']);
+    }
+  });
+
+  it('orders by date first, and only then by start time', () => {
+    const { workouts } = composeTraining(
+      [
+        session({ id: 'tue-late', date: '2026-08-25', startTime: '2026-08-25T20:00:00Z' }),
+        session({ id: 'wed-early', date: '2026-08-26', startTime: '2026-08-26T06:00:00Z' }),
+      ],
+      [],
+    );
+
+    // A late Tuesday session is still older than an early Wednesday one. The
+    // day is the outer key; the time only ever settles a tie inside one.
+    expect(workouts.map((w) => w.session.id)).toEqual(['wed-early', 'tue-late']);
   });
 
   it('does not mutate the arrays it was given', () => {

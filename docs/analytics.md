@@ -229,6 +229,16 @@ and a synced one compose identically and a second provider changes nothing
 downstream of the writer that stores it. It is a regrouping of data already
 read, never a second copy of it.
 
+- **Session order** is a strict total order: later day first; within a day, a
+  session whose `start_time` was recorded ahead of one whose was not; between
+  two recorded starts, the later one first, so the list runs newest-to-oldest
+  throughout; and otherwise the caller's own order. Instants are compared
+  parsed, not as text — `+00:00` and `Z` are the same moment and do not sort
+  alike as strings. The rule is deliberately total rather than "tie whenever
+  either side lacks a time": that comparator is intransitive (an untimed
+  session ties both a 10:00 and an 08:00 one while those two do not tie each
+  other) and produces an order that depends on the input permutation. No
+  session is moved on a time nothing measured, and no start time is inferred.
 - **Exercise order** is `exercise_index`, resolved by `joinLoggedSets` and not
   re-derived. The same movement performed at two points in a workout stays two
   blocks: merging them would report work done apart as one run of sets.

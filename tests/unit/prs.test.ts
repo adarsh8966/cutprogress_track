@@ -53,6 +53,8 @@ function session(overrides: Partial<TrainingSession> = {}): TrainingSession {
     source: 'HEVY',
     completed: true,
     importId: null,
+    startTime: null,
+    endTime: null,
     ...overrides,
   };
 }
