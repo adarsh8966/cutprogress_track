@@ -1,88 +1,107 @@
 /**
- * The list of training sessions actually recorded.
+ * The training you actually did, workout by workout.
  *
- * This is the answer to "I imported a Pull session and Training said nothing
- * was logged". A session appears here because a workout_sessions row exists,
- * full stop - not because anything was logged inside it. What the row does not
- * know, it says it does not know: a summary import has no exercises, and the
- * row states that rather than leaving a gap the reader has to interpret.
+ * This is the primary content of the Training page, and each row opens onto
+ * what was performed inside it - exercises in the order the source recorded
+ * them, and the sets on each. It used to be a link to another page and a set
+ * count, so the answer to "what did I do on Aug 29?" lived one navigation
+ * away from the page named after it.
+ *
+ * A session appears here because a workout_sessions row exists, full stop -
+ * not because anything was logged inside it. What the row does not know, it
+ * says it does not know: a summary import has no exercises, and both the
+ * collapsed row and the opened panel state that rather than leaving a gap the
+ * reader has to interpret.
+ *
+ * The row is a <summary>, so it opens on click, tap, Enter and Space, with no
+ * hover anywhere and no JavaScript of ours. The link to the full session -
+ * where a workout can be corrected or added to - is inside the panel: an
+ * anchor nested in a summary makes Enter ambiguous for anyone navigating by
+ * keyboard.
  */
-import Link from 'next/link';
+import { Disclosure } from '@/components/ui/Disclosure';
 import { formatNumber } from '@/components/ui/primitives';
+import { WorkoutDetail } from '@/components/training/WorkoutDetail';
 import { formatShortDate } from '@/lib/normalization/dates';
-import type { TrainingSession } from '@/lib/analytics/training';
+import type { DisplayUnits } from '@/lib/normalization/units';
+import type { Workout } from '@/lib/analytics/training';
 
 export function SessionHistory({
-  sessions,
-  setCountBySession,
+  workouts,
+  units,
 }: {
-  sessions: TrainingSession[];
-  setCountBySession: Map<string, number>;
+  workouts: Workout[];
+  units: DisplayUnits;
 }) {
-  if (sessions.length === 0) {
+  if (workouts.length === 0) {
     return <p className="py-6 text-sm text-ink-faint">No training sessions recorded yet.</p>;
   }
 
   return (
     <ul className="divide-y divide-line/60">
-      {sessions.map((session) => {
-        const sets = setCountBySession.get(session.id) ?? 0;
-        return (
-          <li key={session.id}>
-            <Link
-              href={`/training/${session.id}`}
-              className="-mx-2 block rounded px-2 py-3 transition-colors hover:bg-raised"
-            >
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="tabular text-sm text-ink-muted">
-                  {formatShortDate(session.date)}
-                </span>
-                <span className="text-sm text-ink">
-                  {/* The name the source gave it, when it gave one. A title
-                      that mapped to OTHER is still worth reading. */}
-                  {session.title ?? session.sessionType.replaceAll('_', ' ').toLowerCase()}
-                </span>
-                {session.title !== null && (
-                  <span className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-                    {session.sessionType.replaceAll('_', ' ').toLowerCase()}
-                  </span>
-                )}
-                <span className="tabular ml-auto text-sm">
-                  {session.durationMinutes === null ? (
-                    <span className="text-ink-faint">duration not logged</span>
-                  ) : (
-                    `${formatNumber(session.durationMinutes, 0)} min`
-                  )}
-                </span>
-              </div>
-
-              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-ink-faint">
-                {session.averageHeartRate !== null && (
-                  <span className="tabular">
-                    avg {formatNumber(session.averageHeartRate, 0)} bpm
-                  </span>
-                )}
-                {session.maxHeartRate !== null && (
-                  <span className="tabular">
-                    max {formatNumber(session.maxHeartRate, 0)} bpm
-                  </span>
-                )}
-                {session.calories !== null && (
-                  <span className="tabular">
-                    {formatNumber(session.calories, 0)} kcal
-                  </span>
-                )}
-                {/* Provenance, where the user is looking at the session -
-                    spec §15: an imported record says so. */}
-                {session.externalSource === 'HEVY' && <span>from Hevy</span>}
-                <span className="ml-auto">
-                  {sets === 0 ? 'no exercises logged' : `${sets} set${sets === 1 ? '' : 's'}`}
-                </span>
-              </div>
-            </Link>
-          </li>
-        );
-      })}
+      {workouts.map((workout) => (
+        <li key={workout.session.id}>
+          <Disclosure summary={<SessionLine workout={workout} />}>
+            <WorkoutDetail workout={workout} units={units} />
+          </Disclosure>
+        </li>
+      ))}
     </ul>
+  );
+}
+
+/** The collapsed row: enough to recognise the workout without opening it. */
+function SessionLine({ workout }: { workout: Workout }) {
+  const { session } = workout;
+  const type = session.sessionType.replaceAll('_', ' ').toLowerCase();
+
+  const facts: string[] = [formatShortDate(session.date)];
+  facts.push(
+    session.durationMinutes === null
+      ? 'duration not logged'
+      : `${formatNumber(session.durationMinutes, 0)} min`,
+  );
+  // The count of sets RECORDED, warm-ups included - what the source says it
+  // holds. The working-set figure every average is taken over is reconciled
+  // inside the panel, where there is room to name the difference.
+  facts.push(
+    workout.setsLogged === 0
+      ? 'no exercises logged'
+      : `${workout.setsLogged} set${workout.setsLogged === 1 ? '' : 's'}`,
+  );
+
+  // RPE and RIR are the same question asked from opposite ends, and different
+  // sources record different ones. Whichever exists is shown, named, and never
+  // silently swapped for the other.
+  const summary = workout.summary.value;
+  if (summary?.averageRpe != null) {
+    facts.push(`Avg RPE ${formatNumber(summary.averageRpe, 1)}`);
+  } else if (summary?.averageRir != null) {
+    facts.push(`Avg RIR ${formatNumber(summary.averageRir, 1)}`);
+  }
+
+  return (
+    <>
+      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm text-ink">
+          {/* The name the source gave it, when it gave one. A title that
+              mapped to OTHER is still worth reading. */}
+          {session.title ?? type}
+        </span>
+        {session.title !== null && (
+          <span className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
+            {type}
+          </span>
+        )}
+        {/* Provenance, where the user is looking at the session - spec §15:
+            an imported record says so. */}
+        {session.externalSource === 'HEVY' && (
+          <span className="text-[11px] text-ink-faint">from Hevy</span>
+        )}
+      </span>
+      <span className="tabular mt-0.5 block text-xs text-ink-faint">
+        {facts.join(' · ')}
+      </span>
+    </>
   );
 }

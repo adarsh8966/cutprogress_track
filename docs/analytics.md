@@ -215,6 +215,40 @@ significance: added load → added reps → added volume. A ±2% band keeps roun
 noise from reading as progress. Fewer than two sessions returns
 `INSUFFICIENT_DATA`.
 
+### Workout composition
+
+`composeTraining(sessions, sets)` turns the two flat arrays every reader
+returns into one tree: **session → exercises, in the source's order → sets**.
+It is the shape the Training page renders and the shape anything else wanting a
+workout should read, so that the page and the analytics cannot disagree about
+what a workout contained — which they did, when each rebuilt its own.
+
+It is **provider-agnostic by construction**: the inputs are `TrainingSession`
+and `LoggedSet`, neither of which knows Hevy exists, so a hand-logged workout
+and a synced one compose identically and a second provider changes nothing
+downstream of the writer that stores it. It is a regrouping of data already
+read, never a second copy of it.
+
+- **Exercise order** is `exercise_index`, resolved by `joinLoggedSets` and not
+  re-derived. The same movement performed at two points in a workout stays two
+  blocks: merging them would report work done apart as one run of sets.
+- **Per-workout averages** come from `summariseTraining` over that workout's own
+  sets. They are the same calculation as the page total over a narrower slice,
+  never a re-average of averages and never a second implementation.
+- **Two set counts, both true.** `setsLogged` is what was recorded, warm-ups
+  included; `workingSets` is what every average and volume figure is taken
+  over. The page shows the first and reconciles the difference where it shows
+  the second.
+- **Supersets** are *consecutive* exercises sharing a non-null `superset_id`. A
+  run of one is not a superset, and the same id reappearing after an unrelated
+  exercise is a second group — the source recorded two pairings at two points,
+  and joining them would claim one that never happened. Hevy numbers these
+  **from zero**, so `null` is the only value meaning "not in a superset".
+- **Nothing is filtered and nothing is dropped.** A planned-but-not-completed
+  session still composes (`summariseSessions` owns the `completed` rule; a
+  second, quieter one here could disagree with it), and a set whose session was
+  not supplied is returned in `unattachedSets` rather than discarded.
+
 ## Reviews
 
 Weekly change is measured **between the 7-day averages** at each end of the
