@@ -38,6 +38,7 @@ describe('migrations', () => {
       'profiles',
       'recommendations',
       'sleep_records',
+      'sync_runs',
       'system_events',
       'weekly_reviews',
       'workout_sessions',
@@ -142,6 +143,160 @@ describe('migrations', () => {
     // A maximum below the average is a transcription error, not a measurement.
     expect(rows.some((r) => /hr_ordered/i.test(r.definition)
       || />= *average_heart_rate/.test(r.definition))).toBe(true);
+  });
+
+  it('adds the Hevy identity columns from 0014, all nullable', async () => {
+    const { rows } = await db.query<{
+      table_name: string; column_name: string; is_nullable: string;
+    }>(
+      `select table_name, column_name, is_nullable from information_schema.columns
+       where table_schema = 'public'
+         and ((table_name = 'workout_sessions'
+               and column_name in ('title', 'external_source', 'external_id',
+                                   'external_updated_at'))
+           or (table_name = 'workout_sets'
+               and column_name in ('exercise_index', 'exercise_notes', 'superset_id',
+                                   'set_type', 'distance_km', 'duration_seconds'))
+           or (table_name = 'exercises'
+               and column_name in ('external_source', 'external_id')))
+       order by table_name, column_name`,
+    );
+
+    expect(rows.map((r) => `${r.table_name}.${r.column_name}`)).toEqual([
+      'exercises.external_id',
+      'exercises.external_source',
+      'workout_sessions.external_id',
+      'workout_sessions.external_source',
+      'workout_sessions.external_updated_at',
+      'workout_sessions.title',
+      'workout_sets.distance_km',
+      'workout_sets.duration_seconds',
+      'workout_sets.exercise_index',
+      'workout_sets.exercise_notes',
+      'workout_sets.set_type',
+      'workout_sets.superset_id',
+    ]);
+    // A field the source did not report stores NULL. A manual row keeps all of
+    // them NULL and is unaffected by this migration.
+    for (const row of rows) expect(row.is_nullable).toBe('YES');
+  });
+
+  it('makes a second session for the same external workout impossible (§38)', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('hevy-idempotency@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+
+    const insert = () =>
+      db.query(
+        `insert into workout_sessions
+           (user_id, local_date, session_type, source, external_source, external_id)
+         values ($1, current_date, 'PUSH', 'HEVY', 'HEVY', 'workout-abc')`,
+        [userId],
+      );
+
+    await insert();
+    // This is the whole idempotency guarantee: the DATABASE refuses the second
+    // row, so no amount of re-syncing can duplicate a workout.
+    await expect(insert()).rejects.toThrow();
+  });
+
+  it('still allows any number of sessions with no external identity', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('manual-sessions@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+    // The unique index is PARTIAL. Manual and pasted sessions have no external
+    // id and must not be forced to be distinct from one another.
+    for (let i = 0; i < 3; i += 1) {
+      await db.query(
+        `insert into workout_sessions (user_id, local_date, session_type, source)
+         values ($1, current_date, 'PUSH', 'MANUAL')`,
+        [userId],
+      );
+    }
+    const { rows: counted } = await db.query<{ count: string }>(
+      `select count(*)::text as count from workout_sessions
+       where user_id = $1 and external_source is null`,
+      [userId],
+    );
+    expect(counted[0]!.count).toBe('3');
+  });
+
+  it('refuses a half-identified external row on both tables', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('half-identity@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+    // A source with no id cannot be looked up; an id with no source cannot be
+    // told apart from another system's. Neither is a state worth allowing.
+    await expect(
+      db.query(
+        `insert into workout_sessions
+           (user_id, local_date, session_type, source, external_source)
+         values ($1, current_date, 'PUSH', 'HEVY', 'HEVY')`,
+        [userId],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      db.query(
+        `insert into exercises
+           (exercise_id, name, primary_muscle_group, equipment, external_id)
+         values ('half-identified', 'x', 'Chest', 'Cable', 'ABC123')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('gives workout_sets the supersession pair, so a removed set is kept', async () => {
+    const { rows } = await db.query<{ definition: string }>(
+      `select pg_get_constraintdef(oid) as definition from pg_constraint
+       where conrelid = 'workout_sets'::regclass and contype = 'c'`,
+    );
+    const all = rows.map((r) => r.definition).join(' ');
+    // The same two invariants 0011 and 0012 declare: a replacement implies a
+    // time, and nothing supersedes itself.
+    expect(all).toMatch(/superseded_by is null/i);
+    expect(all).toMatch(/superseded_at is not null/i);
+    expect(all).toMatch(/superseded_by <> id/i);
+  });
+
+  it('refuses two sync runs of the same provider running at once', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('sync-race@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+
+    const start = () =>
+      db.query(
+        `insert into sync_runs (user_id, provider) values ($1, 'hevy')`,
+        [userId],
+      );
+
+    await start();
+    // The button pressed while the cron is mid-run would otherwise read the
+    // same events twice and race its own writes.
+    await expect(start()).rejects.toThrow();
+
+    // Once the first has finished, another may start.
+    await db.query(
+      `update sync_runs set status = 'SUCCEEDED', finished_at = now()
+       where user_id = $1`,
+      [userId],
+    );
+    await expect(start()).resolves.toBeDefined();
+  });
+
+  it('refuses a finished sync run with no finish time', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('sync-finished@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+    await expect(
+      db.query(
+        `insert into sync_runs (user_id, provider, status) values ($1, 'hevy', 'FAILED')`,
+        [userId],
+      ),
+    ).rejects.toThrow();
   });
 
   it('refuses a recommendation with no evidence (spec §57)', async () => {

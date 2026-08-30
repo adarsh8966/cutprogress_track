@@ -23,6 +23,7 @@ export type LocalDate = string;
 
 export type DataSource =
   | 'MANUAL'
+  | 'HEVY'
   | 'HEALTH_CONNECT'
   | 'GOOGLE_HEALTH'
   | 'BEVEL'

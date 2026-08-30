@@ -384,6 +384,13 @@ export async function startWorkout(
       completed: true,
       source: 'MANUAL',
       import_id: null,
+      // A session logged here has no name of its own and comes from no external
+      // system. Stated rather than omitted: Insertable makes every column an
+      // explicit decision, so a new column cannot be silently forgotten.
+      title: null,
+      external_source: null,
+      external_id: null,
+      external_updated_at: null,
     })
     .select('id')
     .single();
@@ -535,6 +542,14 @@ export async function logSet(formData: FormData): Promise<ActionResult> {
     warmup: parsed.data.warmup ?? false,
     to_failure: false,
     notes: null,
+    // The exercise-block fields belong to a source that records a workout as a
+    // whole. Logging a set by hand fills none of them, and NULL says so.
+    exercise_index: null,
+    exercise_notes: null,
+    superset_id: null,
+    set_type: null,
+    distance_km: null,
+    duration_seconds: null,
   });
   if (error) return { ok: false, message: error.message };
 

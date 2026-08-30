@@ -1,0 +1,26 @@
+-- 0013_hevy_enums.sql
+-- Hevy becomes a named source of training data (spec §15, §17).
+--
+-- ONE VALUE, ALONE IN ITS OWN FILE. PostgreSQL permits ALTER TYPE ... ADD VALUE
+-- inside a transaction (12+) as long as the new value is not USED in that same
+-- transaction, and `supabase db push` may batch migrations into one. Keeping the
+-- addition separate means 0014 - or anything added to it later - can reference
+-- 'HEVY' freely without the batch failing.
+--
+-- IF NOT EXISTS keeps the migration re-runnable, as in 0012.
+alter type data_source add value if not exists 'HEVY';
+
+-- NO NEW system_event_kind VALUE, DELIBERATELY.
+--
+-- 0014 adds sync_runs, which records a synchronisation's status, times, counts,
+-- warnings, errors and cursor. A second event mechanism for the same facts
+-- would be duplicate architecture, and nothing reads it: /import shows the run
+-- history from sync_runs, and Settings' audit log exists for changes to what
+-- the app REPORTS.
+--
+-- A sync therefore writes exactly one audit entry, and only for the one thing
+-- that takes data out of a day: a workout deleted in Hevy is withdrawn here,
+-- which is OBSERVATION_SUPERSEDED - the value 0012 already added and
+-- app/actions/corrections.ts already writes for a withdrawal. Created and
+-- updated workouts write none: a first backfill of several hundred workouts
+-- must not bury the target changes this log exists to make visible.

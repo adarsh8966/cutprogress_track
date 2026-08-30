@@ -35,14 +35,25 @@
  */
 import type { ConfidenceLevel, DataSource, LocalDate } from '@/lib/types';
 
-/** Spec §16's default ordering. Lower number wins. */
+/**
+ * Spec §16's default ordering. Lower number wins.
+ *
+ * HEVY sits just below MANUAL because it is a deliberate, first-party record of
+ * a training session rather than a summary parsed out of text. In practice the
+ * rank barely matters: this table only breaks a tie between two observations
+ * recorded at the SAME INSTANT (recency decides everything else, see the header
+ * above), and no training field is resolved through here at all - sessions are
+ * summed, not resolved. The entry exists because Record<DataSource, number>
+ * requires it, which is the point: adding a source cannot leave a hole here.
+ */
 export const DEFAULT_SOURCE_PRIORITY: Record<DataSource, number> = {
   MANUAL: 1,
-  HEALTH_CONNECT: 2,
-  GOOGLE_HEALTH: 3,
-  BEVEL: 4,
-  IMPORT_TEXT: 5,
-  OTHER: 6,
+  HEVY: 2,
+  HEALTH_CONNECT: 3,
+  GOOGLE_HEALTH: 4,
+  BEVEL: 5,
+  IMPORT_TEXT: 6,
+  OTHER: 7,
   ESTIMATED: 99,
 };
 
