@@ -69,3 +69,30 @@ describe('safety rails (spec §45)', () => {
     expect(checkTargetWeight(lbToKg(180), null)).toHaveLength(0);
   });
 });
+
+/**
+ * A warning quotes the target back to the user. Quoting it in pounds to
+ * someone who typed kilograms describes a weight they never entered.
+ */
+describe('a warning speaks the unit the user typed in', () => {
+  it('quotes a blocked target in kilograms when that is the setting', () => {
+    const findings = checkTargetWeight(40, 180, 'KG');
+    expect(findings[0]!.severity).toBe('BLOCK');
+    expect(findings[0]!.message).toContain('40.0 kg');
+    expect(findings[0]!.message).not.toContain('lb');
+  });
+
+  it('still quotes pounds by default', () => {
+    const findings = checkTargetWeight(40, 180);
+    expect(findings[0]!.message).toContain('lb');
+  });
+
+  it('carries the unit through reviewTargets', () => {
+    const review = reviewTargets({
+      calories: 2000, targetWeightKg: 40, heightCm: 180,
+      sex: 'MALE', maxWeeklyLossRatePct: 1, weightUnit: 'KG',
+    });
+    expect(review.blocked).toBe(true);
+    expect(review.findings.some((f) => f.message.includes('40.0 kg'))).toBe(true);
+  });
+});

@@ -48,9 +48,15 @@ export default async function LoginPage({
         {isSupabaseConfigured() ? (
           <>
             <LoginForm />
-            <p className="mt-6 text-xs text-ink-faint">
+            {/* min-h-11 is the comfortable touch target. A bare inline link
+                measured 14px tall, which is fine with a mouse and a poor target
+                on the phone this is most often opened on. */}
+            <p className="mt-4 text-xs text-ink-faint">
               No account yet?{' '}
-              <Link href="/signup" className="text-ink-muted underline hover:text-ink">
+              <Link
+                href="/signup"
+                className="inline-flex min-h-11 items-center text-ink-muted underline hover:text-ink"
+              >
                 Create account
               </Link>
             </p>

@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { createActionClient } from '@/lib/supabase/server';
 import { rebuildRange } from '@/lib/data/canonicalise';
-import { getProfile } from '@/lib/data/queries';
+import { getProfile, rowToDailyMetrics } from '@/lib/data/queries';
 import {
   parseText, PARSER_NAME, PARSER_VERSION,
   type ParsedField, type NotStored, type SessionKind,
@@ -38,6 +38,8 @@ import {
 import { idempotencyKey } from '@/lib/health/idempotency';
 import { isLocalDate, localToday } from '@/lib/normalization/dates';
 import { OBSERVATION_RANGES, type ObservationKey } from '@/lib/validation/observations';
+import { UNKNOWN_DAY, type ExistingDay } from '@/lib/health/importStatus';
+import type { ProvenanceMap } from '@/lib/normalization/canonical';
 import type { LocalDate } from '@/lib/types';
 import type { CardioTypeEnum, SessionTypeEnum } from '@/lib/supabase/types';
 
@@ -103,6 +105,20 @@ export interface PreviewRecord {
    * named rather than the banners implying they still apply.
    */
   checkedDate: LocalDate;
+  /**
+   * What this day already resolves to, per canonical field, with the source
+   * that won each one.
+   *
+   * This is what lets the review say NEW, UPDATED, DUPLICATE or CONFLICT per
+   * VALUE rather than only counting rows. Without it the screen can promise
+   * that a number will be written, but not what it will do to the day - and a
+   * value that replaces 1,950 kcal with 2,001 kcal reads exactly like one that
+   * adds 2,001 kcal to an empty day.
+   *
+   * `known: false` means the lookup failed, which the review reports as
+   * unknown rather than as an empty day.
+   */
+  existingDay: ExistingDay;
 }
 
 export interface ParsePreview {
@@ -118,6 +134,11 @@ export interface ParsePreview {
    * review screen cannot say whether importing will add to existing ones.
    */
   sessionCheckFailed: boolean;
+  /**
+   * True when the canonical values for these days could not be read, so the
+   * per-value verdicts fall back to "will be recorded, effect unknown".
+   */
+  dayCheckFailed: boolean;
   parserName: string;
   parserVersion: string;
 }
@@ -144,6 +165,10 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
   const priorImports = new Map<string, { created_at: string; status: string }>();
   const priorSessions = new Map<string, number>();
   const priorSessionRows = new Map<string, ExistingSession[]>();
+  const priorDays = new Map<string, ExistingDay>();
+
+  /** Every date the review will show, whether or not the paste carried one. */
+  const targetDates = [...new Set(result.records.map((r) => r.localDate ?? today))];
 
   // Not being able to identify the user means neither check below runs at all,
   // which must read as "unknown", not as "no repeats and no existing sessions".
@@ -212,6 +237,44 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
     }
   }
 
+  // What each of those days currently resolves to, so the review can say what
+  // confirming will DO to a value rather than only that it will be written.
+  let dayCheckFailed = userId === null && targetDates.length > 0;
+  if (userId && targetDates.length > 0) {
+    const { data: days, error } = await supabase
+      .from('daily_metrics')
+      .select('*')
+      .in('local_date', targetDates);
+    // A failed read must not read as "this day is empty", which would show
+    // every field as NEW and promise the user they were adding rather than
+    // replacing.
+    if (error) dayCheckFailed = true;
+    for (const row of days ?? []) {
+      const provenance = (row.provenance ?? {}) as unknown as ProvenanceMap;
+      const metrics = rowToDailyMetrics(row);
+      priorDays.set(row.local_date, {
+        known: true,
+        values: {
+          weightKg: metrics.weightKg,
+          waistCm: metrics.waistCm,
+          caloriesConsumed: metrics.caloriesConsumed,
+          proteinG: metrics.proteinG,
+          carbsG: metrics.carbsG,
+          fatG: metrics.fatG,
+          fiberG: metrics.fiberG,
+          steps: metrics.steps,
+          activeCalories: metrics.activeCalories,
+          restingHeartRate: metrics.restingHeartRate,
+          hrvMs: metrics.hrvMs,
+          sleepDurationMinutes: metrics.sleepDurationMinutes,
+        },
+        sources: Object.fromEntries(
+          Object.entries(provenance).map(([field, entry]) => [field, entry.source]),
+        ),
+      });
+    }
+  }
+
   const records: PreviewRecord[] = [];
   result.records.forEach((record, index) => {
     // The idempotency key is checked BEFORE the user fills anything in, so a
@@ -256,6 +319,12 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
         : [],
       /** The date `alreadyImported` was checked against, which the reviewer may change. */
       checkedDate: sessionDate,
+      // A day with no canonical row is an empty day, not an unreadable one -
+      // so it is `known` with no values, which reads as NEW rather than as
+      // "could not be checked".
+      existingDay: dayCheckFailed
+        ? UNKNOWN_DAY
+        : priorDays.get(sessionDate) ?? { values: {}, sources: {}, known: true },
     });
   });
 
@@ -263,6 +332,7 @@ export async function parseImport(rawText: string): Promise<ParsePreview> {
     records,
     duplicateCheckFailed,
     sessionCheckFailed,
+    dayCheckFailed,
     parserName: result.parserName,
     parserVersion: result.parserVersion,
   };
@@ -576,6 +646,79 @@ async function supersede(
   return null;
 }
 
+/**
+ * Completes a supersession an earlier attempt at this same paste left undone.
+ *
+ * The resume path below skips re-inserting a summed table an earlier attempt
+ * already wrote, which is right - re-inserting would permanently double the
+ * day. But it used to skip supersede() with it, and those are not the same
+ * thing. An attempt that inserted the replacement and then failed before
+ * marking the row it replaces leaves BOTH counting: 58 + 65 = 123, the exact
+ * arithmetic migration 0011 exists to prevent, arrived at by the one path that
+ * bypassed it.
+ *
+ * So the resume checks the targets rather than assuming. Already superseded
+ * means the earlier attempt finished the job. Otherwise the replacement row is
+ * still on disk under this import id, and when exactly one row answers to
+ * exactly one outstanding target the pairing is unambiguous and is completed
+ * here. When it is not unambiguous, nothing is guessed: the day is reported as
+ * failed, naming what is wrong with it, because silently agreeing that a
+ * doubled day was "kept as it was" is the worse answer.
+ *
+ * Returns an error message, or null when the day is safe.
+ */
+async function completeSupersessions(
+  supabase: ActionClient,
+  table: 'workout_sessions' | 'cardio_sessions',
+  sessions: ConfirmSession[],
+  importId: string,
+): Promise<string | null> {
+  const targetIds = sessions
+    .filter((session) => session.disposition === 'REPLACE' && session.supersedes !== null)
+    .map((session) => session.supersedes!);
+  if (targetIds.length === 0) return null;
+
+  const { data: targets, error } = await supabase
+    .from(table)
+    .select('id, superseded_at')
+    .in('id', targetIds);
+  // A failed lookup here would otherwise read as "nothing outstanding", which
+  // is the reassurance that made this function necessary.
+  if (error) {
+    return 'could not check whether the sessions this replaces were already '
+      + `superseded (${error.message}). Nothing was changed. Try again.`;
+  }
+
+  const outstanding = (targets ?? []).filter((row) => row.superseded_at === null);
+  if (outstanding.length === 0) return null;
+
+  const { data: written, error: writtenError } = await supabase
+    .from(table)
+    .select('id')
+    .eq('import_id', importId);
+  if (writtenError) {
+    return 'could not find the replacement this import already wrote '
+      + `(${writtenError.message}). Nothing was changed. Try again.`;
+  }
+
+  if (outstanding.length === 1 && (written ?? []).length === 1) {
+    const { error: updateError } = await supabase
+      .from(table)
+      .update({ superseded_at: new Date().toISOString(), superseded_by: written![0]!.id })
+      .eq('id', outstanding[0]!.id);
+    if (updateError) return updateError.message;
+    return null;
+  }
+
+  return `an earlier attempt at this day wrote its ${
+    table === 'workout_sessions' ? 'workouts' : 'cardio sessions'
+  } but did not mark the ${outstanding.length} session${
+    outstanding.length === 1 ? '' : 's'
+  } they replace as superseded, and there is more than one candidate, so which `
+    + 'replaced which cannot be established from here. Both readings are counted in '
+    + "this day's totals right now. Open the session and replace the old one by hand.";
+}
+
 /** True when the day carries at least one measurement or session. */
 function hasAnything(record: ConfirmRecord): boolean {
   if (record.sessions.length > 0) return true;
@@ -793,6 +936,10 @@ async function importOneRecord(
     (s) => s.kind === 'WORKOUT' && s.disposition !== 'KEEP',
   );
   if (workouts.length > 0 && alreadyWritten.has('workout_sessions')) {
+    const failure = await completeSupersessions(
+      supabase, 'workout_sessions', workouts, importId,
+    );
+    if (failure) return fail(`Workout: ${failure}`);
     kept.push('workouts');
   } else if (workouts.length > 0) {
     const { data: inserted, error } = await supabase.from('workout_sessions').insert(
@@ -825,6 +972,10 @@ async function importOneRecord(
     (s) => s.kind === 'CARDIO' && s.disposition !== 'KEEP',
   );
   if (cardio.length > 0 && alreadyWritten.has('cardio_sessions')) {
+    const failure = await completeSupersessions(
+      supabase, 'cardio_sessions', cardio, importId,
+    );
+    if (failure) return fail(`Cardio: ${failure}`);
     kept.push('cardio sessions');
   } else if (cardio.length > 0) {
     const { data: inserted, error } = await supabase.from('cardio_sessions').insert(

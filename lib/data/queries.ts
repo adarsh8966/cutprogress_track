@@ -10,12 +10,14 @@ import 'server-only';
  * about.
  */
 import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
-import { rowToProfile, rowsToDailyMetrics } from '@/lib/data/rows';
+import { rowToProfile, rowToDailyMetrics, rowsToDailyMetrics } from '@/lib/data/rows';
 import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { createServerComponentClient } from '@/lib/supabase/server';
 import { addDays, localToday } from '@/lib/normalization/dates';
 import { toNumber } from '@/lib/normalization/numbers';
 import type { ContextExportRow, SystemEventRow } from '@/lib/supabase/types';
+import { toDayRecords, type DayRecord } from '@/lib/data/dayRecords';
+import type { ProvenanceMap } from '@/lib/normalization/canonical';
 
 // Defined in lib/normalization so the canonical resolver can use it too, and
 // re-exported here because this is where the codebase already imports it from.
@@ -248,6 +250,83 @@ export async function getContextExports(limit = 10): Promise<ContextExportRow[]>
     .order('created_at', { ascending: false })
     .limit(limit);
   return data ?? [];
+}
+
+/** What one day holds: the resolved row, and the observations behind it. */
+export interface DayDetail {
+  date: LocalDate;
+  /** The canonical row, or null when the day has never been rebuilt. */
+  canonical: DailyMetrics | null;
+  /**
+   * Which observation won each canonical field, and how many competed
+   * (spec §16). Written on every rebuild since 0005 and, until the day view
+   * existed, read by nothing.
+   */
+  provenance: ProvenanceMap;
+  /** Every observation recorded against the day, superseded ones included. */
+  records: DayRecord[];
+  /**
+   * True when a read failed. The day view must not present a partial answer as
+   * a complete one - "nothing recorded" and "could not be read" are different
+   * claims, and only one of them is safe to believe.
+   */
+  incomplete: boolean;
+}
+
+/**
+ * One day, in full: what it resolves to and what it was resolved from.
+ *
+ * This is the only query that reads the raw layer directly rather than through
+ * daily_metrics, because it is the only view whose job is correcting data.
+ * daily_metrics has no ids and cannot say which of two weigh-ins it is showing.
+ */
+export async function getDayDetail(date: LocalDate): Promise<DayDetail> {
+  const supabase = await createServerComponentClient();
+
+  const [canonical, body, metrics, nutrition, sleep, cardio, workouts] = await Promise.all([
+    supabase.from('daily_metrics').select('*').eq('local_date', date).maybeSingle(),
+    supabase.from('body_measurements').select('*').eq('local_date', date),
+    supabase.from('metric_observations').select('*').eq('local_date', date),
+    supabase.from('nutrition_logs').select('*').eq('local_date', date),
+    supabase.from('sleep_records').select('*').eq('local_date', date),
+    supabase.from('cardio_sessions').select('*').eq('local_date', date),
+    supabase.from('workout_sessions').select('*').eq('local_date', date),
+  ]);
+
+  const incomplete = [body, metrics, nutrition, sleep, cardio, workouts]
+    .some((result) => result.error !== null);
+
+  return {
+    date,
+    canonical: canonical.data ? rowToDailyMetrics(canonical.data) : null,
+    provenance: (canonical.data?.provenance ?? {}) as unknown as ProvenanceMap,
+    records: toDayRecords({
+      body: (body.data ?? []) as never,
+      metrics: (metrics.data ?? []) as never,
+      nutrition: (nutrition.data ?? []) as never,
+      sleep: (sleep.data ?? []) as never,
+      cardio: (cardio.data ?? []) as never,
+      workouts: (workouts.data ?? []) as never,
+    }),
+    incomplete,
+  };
+}
+
+/**
+ * The dates that have anything recorded against them, newest first.
+ *
+ * Read from daily_metrics rather than from the raw tables: a day only reaches
+ * the canonical layer once something was written to it and rebuilt, which is
+ * exactly the set of days worth linking to.
+ */
+export async function getRecordedDates(limit = 30): Promise<LocalDate[]> {
+  const supabase = await createServerComponentClient();
+  const { data } = await supabase
+    .from('daily_metrics')
+    .select('local_date')
+    .order('local_date', { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((row) => row.local_date as LocalDate);
 }
 
 /**

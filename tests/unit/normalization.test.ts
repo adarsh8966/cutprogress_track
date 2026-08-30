@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   lbToKg, kgToLb, milesToKm, kmToMiles, inchesToCm, cmToInches,
-  feetInchesToCm, cmToFeetInches, canonicalWeight, displayWeight,
+  feetInchesToCm, cmToFeetInches, canonicalWeight, displayWeight, restateWeight,
 } from '@/lib/normalization/units';
 import {
   toLocalDate, localToday, addDays, daysBetween, dateRange, lastNDays,
@@ -110,5 +110,41 @@ describe('timezone-correct dates (spec §40)', () => {
     const now = new Date('2026-08-29T02:00:00Z');
     expect(localToday('America/New_York', now)).toBe('2026-08-28');
     expect(localToday('Europe/London', now)).toBe('2026-08-29');
+  });
+});
+
+/**
+ * Switching a unit selector must change the spelling, not the measurement.
+ *
+ * The Settings form converts what is already typed when the unit changes; this
+ * is the conversion, pinned where it can be tested without a browser. Without
+ * it the number stays put while its label changes, and the action then reads
+ * pounds as kilograms.
+ */
+describe('restateWeight', () => {
+  it('rewrites pounds as kilograms without changing the weight', () => {
+    expect(Number(restateWeight('203.7', 'LB', 'KG'))).toBeCloseTo(92.4, 1);
+  });
+
+  it('rewrites kilograms as pounds without changing the weight', () => {
+    expect(Number(restateWeight('92.4', 'KG', 'LB'))).toBeCloseTo(203.7, 1);
+  });
+
+  it('round-trips within display precision', () => {
+    const there = restateWeight('185.0', 'LB', 'KG');
+    expect(Number(restateWeight(there, 'KG', 'LB'))).toBeCloseTo(185, 1);
+  });
+
+  it('leaves a blank field blank rather than inventing a zero', () => {
+    expect(restateWeight('', 'LB', 'KG')).toBe('');
+    expect(restateWeight('   ', 'LB', 'KG')).toBe('   ');
+  });
+
+  it('hands back text it cannot read, so the user can see and fix it', () => {
+    expect(restateWeight('about 200', 'LB', 'KG')).toBe('about 200');
+  });
+
+  it('is a no-op when the unit did not actually change', () => {
+    expect(restateWeight('203.7', 'LB', 'LB')).toBe('203.7');
   });
 });

@@ -29,7 +29,16 @@ export function LogSleepForm({ today }: { today: string }) {
   );
 }
 
-export function LogCardioForm({ today }: { today: string }) {
+/**
+ * logCardio converts the distance with the profile's unit, so the label has to
+ * be that unit. "mi" was hard-coded while the action read the setting.
+ */
+export function LogCardioForm({
+  today, distanceUnit,
+}: {
+  today: string;
+  distanceUnit: string;
+}) {
   return (
     <ActionForm action={logCardio} submitLabel="Record cardio">
       {(errors) => (
@@ -49,7 +58,8 @@ export function LogCardioForm({ today }: { today: string }) {
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <NumberField
-              name="distance" label="Distance" unit="mi" step="0.01" error={errors.distance}
+              name="distance" label="Distance" unit={distanceUnit} step="0.01"
+              error={errors.distance}
             />
             <NumberField
               name="hrZone" label="Heart-rate zone" step="1"
@@ -58,6 +68,20 @@ export function LogCardioForm({ today }: { today: string }) {
             <NumberField
               name="averageHeartRate" label="Average HR" unit="bpm"
               error={errors.averageHeartRate}
+            />
+          </div>
+          {/* logCardio has accepted these since the importer started storing
+              them in 0010, and the cardio list on this very page displays them.
+              Only this form could not record them, so the same session logged
+              by hand kept less than the same session pasted in. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumberField
+              name="maxHeartRate" label="Maximum HR" unit="bpm"
+              error={errors.maxHeartRate}
+            />
+            <NumberField
+              name="calories" label="Calories burned" unit="kcal" step="1"
+              error={errors.calories}
             />
           </div>
         </>

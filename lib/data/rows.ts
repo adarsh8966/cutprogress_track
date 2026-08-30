@@ -12,9 +12,32 @@
  * PostgREST returns numerics as strings in some configurations, and Number(null)
  * would produce 0 - the missing-data bug spec §33 exists to prevent.
  */
-import type { DailyMetrics, UserProfile } from '@/lib/types';
+import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
 import type { DailyMetricsRow, ProfileRow } from '@/lib/supabase/types';
 import { toNumber } from '@/lib/normalization/numbers';
+
+/**
+ * A `date` column as the `YYYY-MM-DD` string LocalDate claims to be.
+ *
+ * Same reasoning as toNumber() below, for the column that matters most. What a
+ * driver hands back for a `date` is not guaranteed to be a string: PostgREST
+ * serialises it to text, other drivers return a Date object at UTC midnight.
+ *
+ * And localDate is not just another field - it is the KEY every series is
+ * built on. A Date arriving where a string was expected does not misformat one
+ * figure; it makes `'2026-11-02'` fail to match `'2026-11-02T00:00:00.000Z'`,
+ * so every trailing window, every latest reading and every chart silently
+ * finds nothing for a day that is sitting right there.
+ *
+ * The UTC parts are read deliberately. A date column carries no time zone, and
+ * reading it through local-time getters west of Greenwich would move the whole
+ * series back a day.
+ */
+export function toLocalDate(value: unknown): LocalDate {
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
 
 export function rowToProfile(row: ProfileRow): UserProfile {
   return {
@@ -51,7 +74,7 @@ export function rowToProfile(row: ProfileRow): UserProfile {
  */
 export function rowToDailyMetrics(row: DailyMetricsRow): DailyMetrics {
   return {
-    localDate: row.local_date,
+    localDate: toLocalDate(row.local_date),
     weightKg: toNumber(row.weight_kg),
     waistCm: toNumber(row.waist_cm),
     steps: toNumber(row.steps),

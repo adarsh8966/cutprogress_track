@@ -17,11 +17,12 @@ import {
 import { apartmentGymExercises } from '@/lib/health/catalog';
 import { todayForUser } from '@/app/actions/log';
 import { compareDates } from '@/lib/normalization/dates';
+import { DEFAULT_PROFILE } from '@/lib/defaults';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TrainingPage() {
-  const { sets, sessions } = await getAnalyticsWindow();
+  const { profile, sets, sessions } = await getAnalyticsWindow();
   const today = await todayForUser();
   const exercises = apartmentGymExercises();
 
@@ -57,6 +58,7 @@ export default async function TrainingPage() {
       rows={rows}
       today={today}
       exercises={exercises}
+      weightUnit={(profile ?? DEFAULT_PROFILE).weightDisplayUnit}
     />
   );
 }

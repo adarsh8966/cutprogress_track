@@ -8,6 +8,8 @@
  *   fruit_veg_servings      resolved, scored, and never displayed
  *   resting_heart_rate      displayed only through a gated 30-day average
  *   total_calories_burned   written by two forms and read by no page at all
+ *   active_calories         two forms named Recovery as its destination while
+ *                           Recovery did not show it
  *
  * Each was found by a person noticing their data was missing. That is the wrong
  * detector. A canonical field is a promise that a number will come back out
@@ -17,6 +19,14 @@
  * TypeScript itself fails the build when a field is added without an entry.
  * The runtime half then checks the named file actually mentions the field, so
  * an entry cannot be a comforting lie.
+ *
+ * AND THE CONTEXT PACK DOES NOT COUNT AS A SCREEN. active_calories passed this
+ * test for as long as it was broken, because lib/context/generate.ts read it
+ * and one reader was enough. The Context Pack is a real output and a real
+ * reader, but it is not something the user can look at to answer "where did my
+ * number go?". So a field readable ONLY from there has to say so out loud, in
+ * CONTEXT_PACK_ONLY below, with the reason - which is the same rule the UI
+ * follows for a value it stores but does not display.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -38,7 +48,7 @@ const READERS: Record<keyof DailyMetrics, string[]> = {
   waistCm: ['app/(app)/dashboard/page.tsx', 'lib/context/generate.ts'],
 
   steps: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
-  activeCalories: ['lib/context/generate.ts'],
+  activeCalories: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
   totalCaloriesBurned: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
 
   workoutMinutes: ['lib/context/generate.ts'],
@@ -58,6 +68,29 @@ const READERS: Record<keyof DailyMetrics, string[]> = {
   fruitVegServings: ['app/(app)/nutrition/page.tsx', 'lib/analytics/scores.ts'],
 
   trainingSessions: ['lib/analytics/adherence.ts', 'lib/context/generate.ts'],
+};
+
+/** Readers that produce an export rather than a screen. */
+const CONTEXT_PACK_PATHS = ['lib/context/generate.ts'];
+
+/**
+ * Canonical fields the user cannot see on any page, and why that is correct.
+ *
+ * Adding to this list is a decision, not a formality: it means a measurement is
+ * stored, resolved and reachable only through the Context Pack. Every entry
+ * needs a reason that survives being read back in six months.
+ */
+const CONTEXT_PACK_ONLY: Partial<Record<keyof DailyMetrics, string>> = {
+  // The day's key, not a measurement.
+  localDate: 'The date itself. Every page reads it; none displays it as a figure.',
+  // The MEASUREMENT is on Training - the page sums the live workout_sessions
+  // rows themselves, which is the honest source for "sessions and their
+  // minutes" and works whether or not a day was canonicalised. The canonical
+  // column is a rollup of those same rows for the Context Pack's benefit.
+  workoutMinutes:
+    'Training sums the session rows directly (getWorkoutSessions), so the '
+    + 'measurement is on screen; this column is the rolled-up copy the Context '
+    + 'Pack averages.',
 };
 
 describe('every canonical field is read by something', () => {
@@ -86,6 +119,34 @@ describe('every canonical field is read by something', () => {
         Object.prototype.hasOwnProperty.call(READERS, field),
         `${field} is mapped into DailyMetrics but has no reader listed`,
       ).toBe(true);
+    }
+  });
+
+  it.each(Object.entries(READERS))('%s is readable somewhere the user looks', (field, files) => {
+    if (Object.prototype.hasOwnProperty.call(CONTEXT_PACK_ONLY, field)) {
+      // Declared as export-only. The declaration must carry a reason.
+      const reason = CONTEXT_PACK_ONLY[field as keyof DailyMetrics];
+      expect(reason, `${field}: CONTEXT_PACK_ONLY needs a reason`).toBeTruthy();
+      return;
+    }
+    const onScreen = files.filter((file) => !CONTEXT_PACK_PATHS.includes(file));
+    expect(
+      onScreen,
+      `${field} is only read by the Context Pack. Either display it, or add it `
+        + 'to CONTEXT_PACK_ONLY with the reason.',
+    ).not.toHaveLength(0);
+  });
+
+  it('does not exempt a field that is in fact displayed', () => {
+    // A stale exemption is worse than none: it silently withdraws the check
+    // from a field somebody has since put on a page.
+    for (const field of Object.keys(CONTEXT_PACK_ONLY) as (keyof DailyMetrics)[]) {
+      const readers = READERS[field] ?? [];
+      const onScreen = readers.filter((file) => !CONTEXT_PACK_PATHS.includes(file));
+      // localDate is read by series.ts, which is machinery rather than a
+      // screen; anything else claiming an exemption must have no other reader.
+      if (field === 'localDate') continue;
+      expect(onScreen, `${field} has an on-screen reader; drop its exemption`).toHaveLength(0);
     }
   });
 });

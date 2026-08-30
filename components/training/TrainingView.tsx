@@ -24,7 +24,7 @@ import { Evidence } from '@/components/ui/Evidence';
 import { HorizontalBars } from '@/components/charts/HorizontalBars';
 import { WorkoutLogger } from '@/components/training/WorkoutLogger';
 import { SessionHistory } from '@/components/training/SessionHistory';
-import { kgToLb } from '@/lib/normalization/units';
+import { displayWeight, type WeightUnit, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
 import type { Exercise } from '@/lib/health/catalog';
 import type { Derived } from '@/lib/types';
 import type {
@@ -60,6 +60,7 @@ export function TrainingView({
   rows,
   today,
   exercises,
+  weightUnit,
 }: {
   sessions: TrainingSession[];
   sessionSummary: Derived<SessionSummary>;
@@ -68,8 +69,12 @@ export function TrainingView({
   rows: ExerciseRow[];
   today: string;
   exercises: Exercise[];
+  /** The user's display unit. Loads are stored in kg and read in this. */
+  weightUnit: WeightUnit;
 }) {
   const s = sessionSummary.value;
+  const weightLabel = WEIGHT_UNIT_LABEL[weightUnit];
+  const asWeight = (kg: number) => displayWeight(kg, weightUnit);
   const hasSessions = (s?.totalSessions ?? 0) > 0;
   const hasSets = (summary.value?.totalWorkingSets ?? 0) > 0;
 
@@ -184,9 +189,9 @@ export function TrainingView({
               value={
                 summary.value?.totalVolumeKg == null
                   ? null
-                  : formatNumber(kgToLb(summary.value.totalVolumeKg), 0)
+                  : formatNumber(asWeight(summary.value.totalVolumeKg), 0)
               }
-              unit="lb"
+              unit={weightLabel}
               size="sm"
             />
           </Card>
@@ -224,58 +229,93 @@ export function TrainingView({
           {rows.length === 0 ? (
             <p className="text-sm text-ink-faint">No exercises logged yet.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-sm">
-                <thead>
-                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-                    <th className="pb-2 font-medium">Exercise</th>
-                    <th className="pb-2 font-medium">Last</th>
-                    <th className="pb-2 font-medium">Best load</th>
-                    <th className="pb-2 font-medium">Best e1RM</th>
-                    <th className="pb-2 font-medium">Trend</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(({ performance, progression }) => {
-                    const p = performance.value!;
-                    return (
-                      <tr key={p.exerciseId} className="border-b border-line/60 last:border-0">
-                        <td className="py-2.5 pr-4 text-ink">{p.exerciseName}</td>
-                        <td className="tabular py-2.5 pr-4 text-ink-muted">
-                          {p.lastSets
-                            .map((set) =>
-                              set.weightKg == null || set.reps == null
-                                ? '—'
-                                : `${formatNumber(kgToLb(set.weightKg), 0)}×${set.reps}`,
-                            )
-                            .join(', ')}
-                        </td>
-                        <td className="tabular py-2.5 pr-4">
+            <div>
+              {/*
+                A responsive grid, not a table in a horizontal scroller. Five
+                columns need 560px, which is wider than any phone, so scrolling
+                sideways was the only way to read the last two - on the page
+                most likely to be opened in a gym. Below sm each exercise is a
+                card with its figures labelled; from sm up it is the same table
+                as before, from the same markup.
+              */}
+              <div
+                role="row"
+                className="hidden border-b border-line pb-2 text-[11px] uppercase tracking-[0.12em] text-ink-faint sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-x-4"
+              >
+                <span>Exercise</span>
+                <span>Last</span>
+                <span>Best load</span>
+                <span>Best e1RM</span>
+                <span>Trend</span>
+              </div>
+              <ul className="divide-y divide-line/60">
+                {rows.map(({ performance, progression }) => {
+                  const p = performance.value!;
+                  const last = p.lastSets
+                    .map((set) =>
+                      set.weightKg == null || set.reps == null
+                        ? '—'
+                        : `${formatNumber(asWeight(set.weightKg), 0)}×${set.reps}`,
+                    )
+                    .join(', ');
+                  const cells: { label: string; value: React.ReactNode }[] = [
+                    { label: 'Last', value: <span className="tabular">{last || '—'}</span> },
+                    {
+                      label: 'Best load',
+                      value: (
+                        <span className="tabular">
                           {p.bestWeightKg == null
                             ? '—'
-                            : `${formatNumber(kgToLb(p.bestWeightKg), 0)} lb`}
-                        </td>
-                        <td className="tabular py-2.5 pr-4">
+                            : `${formatNumber(asWeight(p.bestWeightKg), 0)} ${weightLabel}`}
+                        </span>
+                      ),
+                    },
+                    {
+                      label: 'Best e1RM',
+                      value: (
+                        <span className="tabular">
                           {p.bestEstimated1rmKg == null
                             ? '—'
-                            : `${formatNumber(kgToLb(p.bestEstimated1rmKg), 0)} lb`}
-                        </td>
-                        <td className="py-2.5">
-                          <StatusDot
-                            status={
-                              PROGRESSION_STATUS[progression.value?.state ?? 'INSUFFICIENT_DATA'] ??
-                              'neutral'
-                            }
-                            label={(progression.value?.state ?? 'INSUFFICIENT_DATA')
-                              .replaceAll('_', ' ')
-                              .toLowerCase()}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            : `${formatNumber(asWeight(p.bestEstimated1rmKg), 0)} ${weightLabel}`}
+                        </span>
+                      ),
+                    },
+                    {
+                      label: 'Trend',
+                      value: (
+                        <StatusDot
+                          status={
+                            PROGRESSION_STATUS[progression.value?.state ?? 'INSUFFICIENT_DATA']
+                            ?? 'neutral'
+                          }
+                          label={(progression.value?.state ?? 'INSUFFICIENT_DATA')
+                            .replaceAll('_', ' ')
+                            .toLowerCase()}
+                        />
+                      ),
+                    },
+                  ];
+                  return (
+                    <li
+                      key={p.exerciseId}
+                      className="py-3 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
+                    >
+                      <span className="text-sm text-ink">{p.exerciseName}</span>
+                      {cells.map((cell) => (
+                        <span
+                          key={cell.label}
+                          className="mt-1 flex items-baseline gap-2 text-sm sm:mt-0 sm:block"
+                        >
+                          <span className="w-20 shrink-0 text-[11px] text-ink-faint sm:hidden">
+                            {cell.label}
+                          </span>
+                          {cell.value}
+                        </span>
+                      ))}
+                    </li>
+                  );
+                })}
+              </ul>
               <p className="mt-4 text-[11px] leading-relaxed text-ink-faint">
                 e1RM is estimated from working sets with the Epley formula, not from a
                 tested max. Warm-up sets are recorded but excluded from volume and
@@ -287,7 +327,7 @@ export function TrainingView({
       </section>
 
       <Card title="Log a workout">
-        <WorkoutLogger today={today} exercises={exercises} />
+        <WorkoutLogger today={today} exercises={exercises} weightUnit={weightLabel} />
       </Card>
     </div>
   );

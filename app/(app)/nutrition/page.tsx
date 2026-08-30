@@ -6,6 +6,7 @@
  * it measures adherence to the user's own targets, so nothing here rates food
  * quality or marks a day down for its macro split.
  */
+import Link from 'next/link';
 import { getAnalyticsWindow } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, Meter, Figure, StatusDot, formatNumber } from '@/components/ui/primitives';
@@ -216,7 +217,11 @@ export default async function NutritionPage() {
                       ? 'good'
                       : 'warn';
               return (
-                <li key={day.date} className="flex items-center justify-between gap-3">
+                <li key={day.date}>
+                  <Link
+                    href={`/day/${day.date}`}
+                    className="-mx-2 flex items-center justify-between gap-3 rounded px-2 py-1.5 transition-colors hover:bg-raised"
+                  >
                   <span className="text-xs text-ink-muted">
                     {formatShortDate(day.date)}
                   </span>
@@ -228,6 +233,7 @@ export default async function NutritionPage() {
                         : `${formatNumber(day.value, 0)} kcal`
                     }
                   />
+                  </Link>
                 </li>
               );
             })}

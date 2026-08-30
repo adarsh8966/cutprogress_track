@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  resolveObservations, resolveFields, conflicts, DEFAULT_SOURCE_PRIORITY,
+  resolveObservations, resolveFields, conflicts, corrections,
+  DEFAULT_SOURCE_PRIORITY,
   type Observation,
 } from '@/lib/normalization/canonical';
 
@@ -97,5 +98,132 @@ describe('conflict resolution (spec §16)', () => {
       steps: [obs({ id: 's', value: 10421 })],
     });
     expect(conflicts(provenance)).toEqual(['weightKg']);
+  });
+});
+
+/**
+ * The rule that changed, and the bug it fixes.
+ *
+ * Priority used to beat recency outright, so a hand-logged value outranked
+ * every later correction from any other source forever: the corrected import
+ * was written, reported as imported, and never displayed. These pin the new
+ * ordering and the correction/conflict distinction that rides on it.
+ */
+describe('recency before priority (the corrected-import bug)', () => {
+  it('lets a later import correct an earlier manual value', () => {
+    const resolution = resolveObservations([
+      obs({
+        id: 'typed', value: 92.4, source: 'MANUAL',
+        recordedAt: '2026-08-28T07:00:00Z',
+      }),
+      obs({
+        id: 'imported', value: 93.2, source: 'IMPORT_TEXT',
+        recordedAt: '2026-08-28T19:00:00Z',
+      }),
+    ]);
+    expect(resolution!.observationId).toBe('imported');
+    expect(resolution!.value).toBe(93.2);
+    expect(resolution!.source).toBe('IMPORT_TEXT');
+  });
+
+  it('still lets a later manual entry correct an earlier import', () => {
+    const resolution = resolveObservations([
+      obs({
+        id: 'imported', value: 93.2, source: 'IMPORT_TEXT',
+        recordedAt: '2026-08-28T07:00:00Z',
+      }),
+      obs({
+        id: 'typed', value: 92.4, source: 'MANUAL',
+        recordedAt: '2026-08-28T19:00:00Z',
+      }),
+    ]);
+    expect(resolution!.observationId).toBe('typed');
+  });
+
+  it('breaks a same-instant tie by source priority', () => {
+    const at = '2026-08-28T12:00:00Z';
+    const resolution = resolveObservations([
+      obs({ id: 'imported', value: 93.2, source: 'IMPORT_TEXT', recordedAt: at }),
+      obs({ id: 'typed', value: 92.4, source: 'MANUAL', recordedAt: at }),
+    ]);
+    expect(resolution!.observationId).toBe('typed');
+  });
+});
+
+describe('a correction is not a conflict', () => {
+  /** Two readings from one source, materially apart: a corrected typo. */
+  const corrected = [
+    obs({
+      id: 'wrong', value: 92.4, source: 'MANUAL',
+      recordedAt: '2026-08-28T07:00:00Z',
+    }),
+    obs({
+      id: 'right', value: 96.0, source: 'MANUAL',
+      recordedAt: '2026-08-28T19:00:00Z',
+    }),
+  ];
+
+  it('keeps HIGH confidence when one source recorded twice', () => {
+    const resolution = resolveObservations(corrected);
+    expect(resolution!.value).toBe(96.0);
+    expect(resolution!.confidence).toBe('HIGH');
+    expect(resolution!.disagreement).toBeNull();
+    expect(resolution!.candidates).toBe(2);
+    expect(resolution!.sources).toBe(1);
+  });
+
+  it('does not report a corrected field as a conflict', () => {
+    const { provenance } = resolveFields({ weightKg: corrected });
+    expect(conflicts(provenance)).toEqual([]);
+    expect(corrections(provenance)).toEqual(['weightKg']);
+  });
+
+  it('still reports two disagreeing sources as a conflict', () => {
+    const { provenance } = resolveFields({
+      weightKg: [
+        obs({ id: 'a', value: 93.0, source: 'MANUAL' }),
+        obs({ id: 'b', value: 96.0, source: 'BEVEL' }),
+      ],
+    });
+    expect(conflicts(provenance)).toEqual(['weightKg']);
+    // Two sources, one observation each: nothing was corrected.
+    expect(corrections(provenance)).toEqual([]);
+  });
+
+  it('compares each source\'s latest, not every observation', () => {
+    // MANUAL corrected 92.4 -> 95.8; BEVEL reported 96.0 once. The sources
+    // agree closely NOW, and the superseded 92.4 must not drag that down.
+    const resolution = resolveObservations([
+      obs({
+        id: 'old-manual', value: 92.4, source: 'MANUAL',
+        recordedAt: '2026-08-28T07:00:00Z',
+      }),
+      obs({
+        id: 'new-manual', value: 95.8, source: 'MANUAL',
+        recordedAt: '2026-08-28T19:00:00Z',
+      }),
+      obs({
+        id: 'bevel', value: 96.0, source: 'BEVEL',
+        recordedAt: '2026-08-28T08:00:00Z',
+      }),
+    ]);
+    expect(resolution!.observationId).toBe('new-manual');
+    expect(resolution!.sources).toBe(2);
+    expect(resolution!.candidates).toBe(3);
+    expect(resolution!.confidence).toBe('HIGH');
+    expect(resolution!.disagreement).toBeCloseTo(0.2, 6);
+  });
+
+  it('reads a pre-existing provenance row without a sources field', () => {
+    // daily_metrics is a cache, but a row written before `sources` existed is
+    // still on disk until it is rebuilt, and must still be readable.
+    expect(
+      conflicts({
+        weightKg: {
+          source: 'MANUAL', confidence: 'LOW',
+          observationId: 'a', candidates: 2,
+        },
+      }),
+    ).toEqual(['weightKg']);
   });
 });

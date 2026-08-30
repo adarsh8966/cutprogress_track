@@ -49,6 +49,14 @@ export interface RecoverySummary {
   restingHeartRate: RecoveryMetric;
   hrv: RecoveryMetric;
   totalCaloriesBurned: RecoveryMetric;
+  /**
+   * Active calories. Offered by Quick Entry and by the Recovery metrics form,
+   * both of which name Recovery as its destination - and until this existed no
+   * page read it at all. The value was written, resolved into daily_metrics,
+   * mapped into DailyMetrics, and displayed nowhere: the same fault as resting
+   * heart rate, with a form promising a destination that did not show it.
+   */
+  activeCalories: RecoveryMetric;
   zone2Minutes: Derived<number>;
   /**
    * Spec §14: true only when the last 7 days sit materially below the user's
@@ -125,6 +133,7 @@ export function recoverySummary(days: DailyMetrics[], end: LocalDate): RecoveryS
     restingHeartRate: metric(days, 'restingHeartRate', 'Resting heart rate', end),
     hrv: metric(days, 'hrvMs', 'HRV', end),
     totalCaloriesBurned: metric(days, 'totalCaloriesBurned', 'Total calories burned', end),
+    activeCalories: metric(days, 'activeCalories', 'Active calories', end),
     zone2Minutes: zone2Total(days, end),
     belowBaseline:
       sleep7.value !== null && sleep30.value !== null && sleep7.value < sleep30.value * 0.9,

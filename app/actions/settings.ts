@@ -111,6 +111,8 @@ export async function saveSettings(formData: FormData): Promise<SettingsResult> 
     heightCm,
     sex: values.sex,
     maxWeeklyLossRatePct: values.maxWeeklyLossRatePct,
+    // Quoted back in the unit they typed it in, not in pounds regardless.
+    weightUnit: values.weightDisplayUnit,
   });
 
   if (review.blocked) {

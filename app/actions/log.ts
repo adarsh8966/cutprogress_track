@@ -43,6 +43,16 @@ function revalidateAll() {
   }
 }
 
+/**
+ * The day a write landed on, as well as the pages that summarise it. /day/[date]
+ * lists the raw observations themselves, so it goes stale on exactly the writes
+ * the summary pages do.
+ */
+function revalidateDay(date: LocalDate) {
+  revalidateAll();
+  revalidatePath(`/day/${date}`);
+}
+
 const bodyMeasurementSchema = z
   .object({
     date: dateSchema,
@@ -88,7 +98,7 @@ export async function logBodyMeasurement(formData: FormData): Promise<ActionResu
   if (error) return { ok: false, message: error.message };
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
-  revalidateAll();
+  revalidateDay(parsed.data.date);
   void timezone;
   return { ok: true, message: 'Measurement recorded.' };
 }
@@ -142,7 +152,7 @@ export async function logNutrition(formData: FormData): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   await rebuildDailyMetrics(supabase, userId, values.date);
-  revalidateAll();
+  revalidateDay(values.date);
   return { ok: true, message: 'Nutrition recorded.' };
 }
 
@@ -198,7 +208,7 @@ export async function logDailyMetrics(formData: FormData): Promise<ActionResult>
   if (error) return { ok: false, message: error.message };
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
-  revalidateAll();
+  revalidateDay(parsed.data.date);
   return { ok: true, message: 'Metrics recorded.' };
 }
 
@@ -233,7 +243,7 @@ export async function logSleep(formData: FormData): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
-  revalidateAll();
+  revalidateDay(parsed.data.date);
   return { ok: true, message: 'Sleep recorded.' };
 }
 
@@ -248,9 +258,22 @@ const cardioSchema = z.object({
   // not, so the same session recorded two ways kept different amounts of data.
   maxHeartRate: z.coerce.number().min(25).max(250).optional().nullable(),
   calories: z.coerce.number().min(0).max(20000).optional().nullable(),
+  // Carries the label a corrected session should keep, and the free text the
+  // importer already writes here from the paste's own opener line.
+  notes: z.string().max(500).optional(),
 });
 
-export async function logCardio(formData: FormData): Promise<ActionResult> {
+/**
+ * Records a cardio session (spec §13).
+ *
+ * Returns the id of the row it wrote, because cardio_sessions is SUMMED rather
+ * than resolved: correcting a session means writing the corrected one and
+ * marking the old one superseded, and the correction has to be able to name
+ * the row that replaced it. See correctCardioSession in app/actions/corrections.ts.
+ */
+export async function logCardio(
+  formData: FormData,
+): Promise<ActionResult & { sessionId?: string }> {
   const parsed = cardioSchema.safeParse({
     date: formData.get('date'),
     type: formData.get('type'),
@@ -260,6 +283,7 @@ export async function logCardio(formData: FormData): Promise<ActionResult> {
     averageHeartRate: emptyToNull(formData.get('averageHeartRate')),
     maxHeartRate: emptyToNull(formData.get('maxHeartRate')),
     calories: emptyToNull(formData.get('calories')),
+    notes: formData.get('notes') ?? undefined,
   });
   if (!parsed.success) return fieldErrors(parsed.error);
 
@@ -269,29 +293,36 @@ export async function logCardio(formData: FormData): Promise<ActionResult> {
   const { supabase, userId } = await requireUser();
   const profile = await getProfile();
 
-  const { error } = await supabase.from('cardio_sessions').insert({
-    user_id: userId,
-    local_date: parsed.data.date,
-    started_at: null,
-    cardio_type: parsed.data.type,
-    duration_minutes: parsed.data.duration,
-    distance_km:
-      parsed.data.distance == null
-        ? null
-        : canonicalDistance(parsed.data.distance, profile?.distanceDisplayUnit ?? 'MI'),
-    average_heart_rate: parsed.data.averageHeartRate ?? null,
-    max_heart_rate: parsed.data.maxHeartRate ?? null,
-    hr_zone: parsed.data.hrZone ?? null,
-    calories: parsed.data.calories ?? null,
-    notes: null,
-    source: 'MANUAL',
-    import_id: null,
-  });
-  if (error) return { ok: false, message: error.message };
+  const { data, error } = await supabase
+    .from('cardio_sessions')
+    .insert({
+      user_id: userId,
+      local_date: parsed.data.date,
+      started_at: null,
+      cardio_type: parsed.data.type,
+      duration_minutes: parsed.data.duration,
+      distance_km:
+        parsed.data.distance == null
+          ? null
+          : canonicalDistance(parsed.data.distance, profile?.distanceDisplayUnit ?? 'MI'),
+      average_heart_rate: parsed.data.averageHeartRate ?? null,
+      max_heart_rate: parsed.data.maxHeartRate ?? null,
+      hr_zone: parsed.data.hrZone ?? null,
+      calories: parsed.data.calories ?? null,
+      notes: parsed.data.notes || null,
+      source: 'MANUAL',
+      import_id: null,
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    return { ok: false, message: error?.message ?? 'Could not record the session.' };
+  }
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
   revalidateAll();
-  return { ok: true, message: 'Cardio session recorded.' };
+  revalidatePath(`/day/${parsed.data.date}`);
+  return { ok: true, message: 'Cardio session recorded.', sessionId: data.id };
 }
 
 const workoutSchema = z.object({
@@ -360,6 +391,7 @@ export async function startWorkout(
   if (error || !data) return { ok: false, message: error?.message ?? 'Could not start session.' };
 
   await rebuildDailyMetrics(supabase, userId, parsed.data.date);
+  revalidateDay(parsed.data.date);
   revalidatePath('/training');
   return { ok: true, message: 'Session started.', sessionId: data.id };
 }
@@ -420,11 +452,24 @@ export async function updateWorkoutSession(formData: FormData): Promise<ActionRe
 
   const { data: existing, error: readError } = await supabase
     .from('workout_sessions')
-    .select('local_date')
+    .select('local_date, superseded_at')
     .eq('id', values.sessionId)
     .maybeSingle();
   if (readError) return { ok: false, message: readError.message };
   if (!existing) return { ok: false, message: 'That session no longer exists.' };
+  // A superseded session is history: a later observation replaced it and the
+  // day's totals already exclude it (migration 0011). Editing it would appear
+  // to work, change no total anywhere, and quietly rewrite a record kept
+  // precisely so the correction stays traceable.
+  if (existing.superseded_at !== null) {
+    return {
+      ok: false,
+      message:
+        'This session was replaced by a later correction, so it no longer counts '
+        + "towards the day's totals and is kept only as history. Edit the session "
+        + 'that replaced it instead.',
+    };
+  }
 
   const { error } = await supabase
     .from('workout_sessions')
@@ -442,7 +487,7 @@ export async function updateWorkoutSession(formData: FormData): Promise<ActionRe
   // The day's rollup is a pure function of the raw layer, so it has to be
   // recomputed or the dashboard keeps showing the duration that was replaced.
   await rebuildDailyMetrics(supabase, userId, existing.local_date as LocalDate);
-  revalidateAll();
+  revalidateDay(existing.local_date as LocalDate);
   revalidatePath(`/training/${values.sessionId}`);
   return { ok: true, message: 'Session updated.' };
 }

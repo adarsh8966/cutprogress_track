@@ -18,12 +18,12 @@
  * A paste may describe several days. Each is reviewed and confirmed as its own
  * record, and the result panel reports each one separately.
  */
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
   parseImport, confirmImport,
   type ParsePreview, type ImportResult,
 } from '@/app/actions/import';
-import type { SessionFieldKey } from '@/lib/health/parser';
+import type { DayFieldKey, SessionFieldKey } from '@/lib/health/parser';
 import {
   SESSION_TYPE_VALUES, CARDIO_TYPE_VALUES,
   SESSION_TYPE_LABEL, CARDIO_TYPE_LABEL,
@@ -31,14 +31,86 @@ import {
 import {
   DAY_FIELD_ORDER, SESSION_FIELD_LABEL,
   dayRow, sessionFieldRow, dayPath, sessionPath, sessionTypePath,
-  editsFromPreview, buildConfirmPayload, summariseWrites,
+  editsFromPreview, buildConfirmPayload, summariseWrites, summariseImport,
   storableFields, unstorableFields, emptyEdits,
   type SessionDisposition,
   type DisplayUnits, type EditState,
 } from '@/lib/health/importPayload';
+import {
+  dayFieldVerdict, sessionVerdict, blocksImport,
+  type ValueStatus, type FieldVerdict,
+} from '@/lib/health/importStatus';
 import type {
   WeightUnit, LengthUnit, DistanceUnit,
 } from '@/lib/normalization/units';
+
+/**
+ * What each verdict looks like. The wording is the promise: NEW and UPDATED
+ * mean the value WILL be stored, IGNORED and INVALID mean it will not, and the
+ * two groups are coloured apart so the difference is legible before confirming
+ * rather than discoverable after.
+ */
+const STATUS_STYLE: Record<ValueStatus, string> = {
+  NEW: 'border-good/40 bg-good/5 text-good',
+  UPDATED: 'border-accent/40 bg-accent/5 text-accent',
+  REPLACE: 'border-accent/40 bg-accent/5 text-accent',
+  DUPLICATE: 'border-line-strong bg-raised text-ink-muted',
+  CONFLICT: 'border-warn/50 bg-warn/5 text-warn',
+  IGNORED: 'border-line bg-ground text-ink-faint',
+  INVALID: 'border-bad/50 bg-bad/5 text-bad',
+};
+
+function StatusChip({ status }: { status: ValueStatus }) {
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${STATUS_STYLE[status]}`}
+    >
+      {status.toLowerCase()}
+    </span>
+  );
+}
+
+/**
+ * Where an unconfirmed paste is kept between visits.
+ *
+ * Typing a week of data into a textarea and losing it to an accidental back
+ * gesture is the kind of loss that makes a person stop using a tool. The draft
+ * lives in this browser and goes nowhere else: it is not sent anywhere, it is
+ * not a database row, and it is cleared the moment the import is confirmed or
+ * explicitly discarded.
+ *
+ * Only the RAW TEXT is kept, not the review state. The review is derived from
+ * the text by parseImport, and re-deriving it is both cheap and safer than
+ * restoring a half-edited set of values whose verdicts were computed against
+ * what the days held at some earlier moment.
+ */
+const DRAFT_KEY = 'cut-os:import:draft';
+
+function readDraft(): string | null {
+  try {
+    const saved = window.localStorage.getItem(DRAFT_KEY);
+    return saved && saved.trim() !== '' ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(text: string) {
+  try {
+    if (text.trim() === '') window.localStorage.removeItem(DRAFT_KEY);
+    else window.localStorage.setItem(DRAFT_KEY, text);
+  } catch {
+    // A draft is a convenience. Losing it is not worth an error on the page.
+  }
+}
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // As above.
+  }
+}
 
 const SAMPLE = `Date: 2026-08-28
 Weight: 205.4 lb
@@ -82,6 +154,36 @@ export function ImportWorkbench({
   const [edits, setEdits] = useState<EditState>(emptyEdits);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [pending, startTransition] = useTransition();
+  /** True once a saved draft has been put back, so the page can say so. */
+  const [restored, setRestored] = useState(false);
+
+  /**
+   * Restores an unconfirmed paste, after mount rather than in a lazy
+   * initialiser: the server has no localStorage, so initialising from it would
+   * render one thing on the server and another on the client.
+   */
+  useEffect(() => {
+    const draft = readDraft();
+    if (draft === null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount read, see above
+    setRawText(draft);
+    setRestored(true);
+  }, []);
+
+  /** Every keystroke, because the loss this guards against is unannounced. */
+  function updateRawText(text: string) {
+    setRawText(text);
+    setRestored(false);
+    writeDraft(text);
+  }
+
+  function discardDraft() {
+    clearDraft();
+    setRawText('');
+    setRestored(false);
+    setPreview(null);
+    setEdits(emptyEdits());
+  }
 
   const units: DisplayUnits = useMemo(
     () => ({ weight: weightUnit, length: lengthUnit, distance: distanceUnit }),
@@ -184,6 +286,76 @@ export function ImportWorkbench({
     [preview, edits, units, today],
   );
 
+  /**
+   * What confirming will do to one day-level value.
+   *
+   * Read from the SAME payload the confirm submits, so the verdict on screen
+   * and the value sent cannot describe different numbers - the property this
+   * whole screen exists to hold.
+   */
+  function dayVerdict(record: number, key: DayFieldKey): FieldVerdict {
+    const day = preview?.records[record]?.existingDay ?? { values: {}, sources: {}, known: false };
+    const proposed = payload.records[record]?.[key] ?? null;
+    return dayFieldVerdict(key, proposed, day);
+  }
+
+  /** An existing canonical value, written in the unit the field is shown in. */
+  function forExisting(verdict: FieldVerdict, key: DayFieldKey): string {
+    if (verdict.existing === null) return '—';
+    const row = dayRow(key, units);
+    const shown = row.toDisplay ? row.toDisplay(verdict.existing) : verdict.existing;
+    const rounded = Math.round(shown * 100) / 100;
+    return row.unit ? `${rounded} ${row.unit}` : String(rounded);
+  }
+
+  /**
+   * What confirming will do with one session. Sessions are SUMMED into the day
+   * rather than resolved, so an accidental second copy is not a harmless
+   * duplicate observation - it permanently doubles the day's minutes.
+   */
+  function verdictForSession(record: number, index: number) {
+    const preview_ = preview?.records[record];
+    const session = preview_?.sessions[index];
+    if (!preview_ || !session) {
+      return { status: 'IGNORED' as ValueStatus, match: null, reason: '' };
+    }
+    const typePath = sessionTypePath(record, index);
+    const chosen = edits.types[typePath]
+      ?? (session.kind === 'WORKOUT' ? session.sessionType : session.cardioType);
+    const disposition = edits.dispositions[typePath] ?? 'ADD';
+    const payloadIndex = payloadSessionIndex(record, index);
+    const written = payload.records[record]?.sessions[payloadIndex] ?? null;
+    const minutes = written?.sessionMinutes ?? null;
+
+    // The two rails confirmImport enforces, checked here so the review says
+    // "will not be saved" before the confirm rather than after it.
+    let invalidReason: string | null = null;
+    if (session.kind === 'CARDIO' && minutes === null) {
+      invalidReason = 'A cardio session needs a duration before it can be saved.';
+    } else if (
+      written
+      && written.averageHeartRate != null
+      && written.maxHeartRate != null
+      && written.maxHeartRate < written.averageHeartRate
+    ) {
+      invalidReason =
+        `A maximum heart rate of ${written.maxHeartRate} bpm is below the average of `
+        + `${written.averageHeartRate} bpm.`;
+    }
+
+    return sessionVerdict({
+      kind: session.kind,
+      type: chosen,
+      minutes,
+      disposition,
+      supersedes: edits.supersedes[typePath] ?? null,
+      removed: edits.removed[typePath] === true,
+      existing: preview_.existingSessionRows,
+      invalidReason,
+      known: !preview.sessionCheckFailed,
+    });
+  }
+
   /** Reads the very payload that will be submitted, so the two cannot differ. */
   function summary(index: number): string[] {
     const record = payload.records[index];
@@ -205,6 +377,10 @@ export function ImportWorkbench({
         setPreview(null);
         setEdits(emptyEdits());
         setRawText('');
+        setRestored(false);
+        // The paste is now in health_imports, verbatim and permanently. Keeping
+        // a second copy in the browser would only invite importing it twice.
+        clearDraft();
       }
     });
   }
@@ -222,6 +398,30 @@ export function ImportWorkbench({
   const MAX_DAYS = 60;
   const tooManyDays = (preview?.records.length ?? 0) > MAX_DAYS;
 
+  /**
+   * Values that cannot be written. confirmImport refuses the whole payload
+   * over any one of them, so the button is disabled and says which - rather
+   * than letting the user press Confirm and receive a wall of field errors.
+   */
+  const blocked = useMemo(() => {
+    const problems: string[] = [];
+    (preview?.records ?? []).forEach((record, r) => {
+      for (const key of DAY_FIELD_ORDER) {
+        const verdict = dayVerdict(r, key);
+        if (blocksImport(verdict.status)) {
+          problems.push(`${edits.dates[r] ?? today}: ${dayRow(key, units).label}`);
+        }
+      }
+      record.sessions.forEach((_, i) => {
+        if (blocksImport(verdictForSession(r, i).status)) {
+          problems.push(`${edits.dates[r] ?? today}: session ${i + 1}`);
+        }
+      });
+    });
+    return problems;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview, edits, payload, units, today]);
+
   const totalSessions = preview?.records.reduce((n, r) => n + r.sessions.length, 0) ?? 0;
   const totalIgnored = preview?.records.reduce(
     (n, r) => n + r.unrecognisedLines.length, 0,
@@ -236,7 +436,7 @@ export function ImportWorkbench({
           </span>
           <textarea
             value={rawText}
-            onChange={(event) => setRawText(event.target.value)}
+            onChange={(event) => updateRawText(event.target.value)}
             rows={12}
             spellCheck={false}
             disabled={pending}
@@ -255,16 +455,34 @@ export function ImportWorkbench({
           </button>
           <button
             type="button"
-            onClick={() => setRawText(SAMPLE)}
+            onClick={() => updateRawText(SAMPLE)}
             disabled={pending}
-            className="text-xs text-ink-faint hover:text-accent disabled:opacity-40"
+            className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-accent disabled:opacity-40"
           >
             Use a sample
           </button>
+          {rawText.trim() !== '' && (
+            <button
+              type="button"
+              onClick={discardDraft}
+              disabled={pending}
+              className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-ink-muted disabled:opacity-40"
+            >
+              Clear
+            </button>
+          )}
           <p className="text-[11px] text-ink-faint">
             Several days can be pasted at once. Nothing is saved until you review and confirm.
           </p>
         </div>
+
+        {restored && (
+          <p className="mt-3 rounded border border-accent/40 bg-accent/5 px-3 py-2 text-xs leading-relaxed text-accent">
+            A paste you had not confirmed was restored from this browser. It was never
+            sent anywhere and nothing has been imported from it. Parse it to carry on,
+            or clear it.
+          </p>
+        )}
       </section>
 
       {preview && !hasAnythingToReview && (
@@ -293,6 +511,15 @@ export function ImportWorkbench({
               The count of sessions already recorded on these days could not be read, so
               this screen cannot warn you if importing would add to existing ones. A day&rsquo;s
               training and cardio minutes are the total of every session on it.
+            </p>
+          )}
+
+          {preview.dayCheckFailed && (
+            <p className="rounded border border-warn/40 bg-warn/5 px-3 py-2 text-xs text-warn">
+              What these days already hold could not be read, so each value below reads as
+              new. Some may in fact replace a value already recorded. Importing is still
+              safe — nothing is overwritten, and the day resolves to the most recent
+              observation either way.
             </p>
           )}
 
@@ -360,66 +587,76 @@ export function ImportWorkbench({
                 )}
               </label>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[540px] text-sm">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-                      <th className="pb-2 font-medium">Field</th>
-                      <th className="pb-2 font-medium">Value</th>
-                      <th className="pb-2 font-medium">Read from</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {DAY_FIELD_ORDER.map((key) => {
-                      const row = dayRow(key, units);
-                      const field = record.fields.find((f) => f.key === key);
-                      const note = field && field.confidence !== 'HIGH'
-                        ? field.note ?? 'The parser was not certain about this value.'
-                        : null;
-                      const path = dayPath(r, key);
-                      const fieldError = dayError(r, key);
-                      return (
-                        <tr key={key} className="border-b border-line/60 last:border-0">
-                          <td className="py-2 pr-4 align-top text-ink-muted">{row.label}</td>
-                          <td className="py-2 pr-4 align-top">
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                step={row.step ?? 'any'}
-                                value={edits.values[path] ?? ''}
-                                onChange={(event) => setValue(path, event.target.value)}
-                                placeholder="not logged"
-                                aria-invalid={fieldError !== null}
-                                className={`tabular w-28 rounded border bg-ground px-2 py-1 text-sm outline-none focus:border-accent ${
-                                  fieldError ? 'border-bad' : note ? 'border-warn/50' : 'border-line'
-                                }`}
-                              />
-                              {row.unit && (
-                                <span className="text-[11px] text-ink-faint">{row.unit}</span>
-                              )}
-                            </div>
-                            {fieldError && (
-                              <span className="mt-1 block max-w-xs text-[11px] leading-snug text-bad">
-                                {fieldError}
-                              </span>
-                            )}
-                            {note && (
-                              <span className="mt-1 block max-w-xs text-[11px] leading-snug text-warn">
-                                {note}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 align-top">
-                            <code className="text-[11px] text-ink-faint">
-                              {field?.rawText ?? '—'}
-                            </code>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/*
+                A list, not a table. Every value gets a verdict saying what
+                confirming will DO to it - which is the difference between "we
+                will write 2,001 kcal" and "the day currently says 1,950 and
+                will say 2,001". A three-column table could not carry that at
+                any width, and could not be read on a phone at all.
+              */}
+              <ul className="divide-y divide-line/60">
+                {DAY_FIELD_ORDER.map((key) => {
+                  const row = dayRow(key, units);
+                  const field = record.fields.find((f) => f.key === key);
+                  const note = field && field.confidence !== 'HIGH'
+                    ? field.note ?? 'The parser was not certain about this value.'
+                    : null;
+                  const path = dayPath(r, key);
+                  const fieldError = dayError(r, key);
+                  const verdict = dayVerdict(r, key);
+                  return (
+                    <li key={key} className="py-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <span className="min-w-[7.5rem] text-sm text-ink-muted">
+                          {row.label}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            step={row.step ?? 'any'}
+                            value={edits.values[path] ?? ''}
+                            onChange={(event) => setValue(path, event.target.value)}
+                            placeholder="not logged"
+                            aria-invalid={fieldError !== null}
+                            aria-label={row.label}
+                            className={`tabular w-28 rounded border bg-ground px-2 py-1.5 text-base outline-none focus:border-accent sm:text-sm ${
+                              fieldError ? 'border-bad' : note ? 'border-warn/50' : 'border-line'
+                            }`}
+                          />
+                          {row.unit && (
+                            <span className="text-[11px] text-ink-faint">{row.unit}</span>
+                          )}
+                        </div>
+                        <StatusChip status={verdict.status} />
+                        {verdict.existing !== null && verdict.status !== 'IGNORED' && (
+                          <span className="tabular text-[11px] text-ink-faint">
+                            existing {forExisting(verdict, key)}
+                          </span>
+                        )}
+                        {/* Pasted text is arbitrary: one long unbroken line
+                            would widen the whole page rather than wrap. */}
+                        <code className="ml-auto min-w-0 break-all text-[11px] text-ink-faint">
+                          {field?.rawText ?? '—'}
+                        </code>
+                      </div>
+
+                      <p className="mt-1.5 max-w-2xl text-[11px] leading-snug text-ink-faint">
+                        {verdict.reason}
+                      </p>
+                      {fieldError && (
+                        <p className="mt-1 max-w-2xl text-[11px] leading-snug text-bad">
+                          {fieldError}
+                        </p>
+                      )}
+                      {note && (
+                        <p className="mt-1 max-w-2xl text-[11px] leading-snug text-warn">
+                          {note}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
 
               {record.sessions.map((session, s) => {
                 const isWorkout = session.kind === 'WORKOUT';
@@ -428,32 +665,46 @@ export function ImportWorkbench({
                   ? SESSION_TYPE_LABEL : CARDIO_TYPE_LABEL;
                 const dropped = unstorableFields(session);
                 const removed = edits.removed[sessionTypePath(r, s)] === true;
+                const outcome = verdictForSession(r, s);
                 return (
                   <div
                     key={s}
                     className={`rounded border border-line bg-ground/40 p-4 ${
-                      removed ? 'opacity-50' : ''
+                      removed ? 'opacity-60' : ''
                     }`}
                   >
-                    <header className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <header className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                       <span className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
                         {isWorkout ? 'Workout' : 'Cardio'}
                       </span>
-                      <code className="text-[11px] text-ink-faint">{session.openerRawText}</code>
+                      <StatusChip status={outcome.status} />
+                      <code className="min-w-0 break-all text-[11px] text-ink-faint">
+                        {session.openerRawText}
+                      </code>
                       <button
                         type="button"
                         onClick={() => toggleRemoved(sessionTypePath(r, s))}
-                        className="ml-auto text-[11px] text-ink-faint hover:text-accent"
+                        className="ml-auto inline-flex min-h-9 items-center text-[11px] text-ink-faint hover:text-accent"
                       >
                         {removed ? 'Keep this session' : 'Do not import this session'}
                       </button>
                     </header>
 
-                    {removed && (
-                      <p className="text-[11px] leading-snug text-ink-faint">
-                        This session will not be saved. The paste is still stored verbatim.
-                      </p>
-                    )}
+                    {/* The verdict in words, above the fields it describes. A
+                        DUPLICATE here means the day would total both sessions,
+                        which is worth reading before confirming rather than
+                        discovering in the training minutes afterwards. */}
+                    <p
+                      className={`mb-3 max-w-2xl text-[11px] leading-snug ${
+                        outcome.status === 'INVALID'
+                          ? 'text-bad'
+                          : outcome.status === 'DUPLICATE' || outcome.status === 'CONFLICT'
+                            ? 'text-warn'
+                            : 'text-ink-faint'
+                      }`}
+                    >
+                      {outcome.reason}
+                    </p>
 
                     {(() => {
                       const path = sessionTypePath(r, s);
@@ -601,16 +852,23 @@ export function ImportWorkbench({
                     {(dropped.length > 0 || session.notStored.length > 0) && (
                       <ul className="mt-3 space-y-1 border-t border-line pt-2">
                         {dropped.map((field, i) => (
-                          <li key={`d${i}`} className="text-[11px] leading-snug text-warn">
+                          <li
+                            key={`d${i}`}
+                            className="break-words text-[11px] leading-snug text-warn"
+                          >
                             Not saved: {SESSION_FIELD_LABEL[field.key as SessionFieldKey]} —{' '}
-                            <code>{field.rawText}</code>. A {isWorkout ? 'workout' : 'cardio'}{' '}
+                            <code className="break-all">{field.rawText}</code>. A {isWorkout ? 'workout' : 'cardio'}{' '}
                             session has no column for it
                             {isWorkout ? ' — move it under a Cardio: block' : ''}.
                           </li>
                         ))}
                         {session.notStored.map((entry, i) => (
-                          <li key={`n${i}`} className="text-[11px] leading-snug text-ink-faint">
-                            Not saved: <code>{entry.rawText}</code> — {entry.reason}
+                          <li
+                            key={`n${i}`}
+                            className="break-words text-[11px] leading-snug text-ink-faint"
+                          >
+                            Not saved: <code className="break-all">{entry.rawText}</code>{' '}
+                            — {entry.reason}
                           </li>
                         ))}
                       </ul>
@@ -641,13 +899,19 @@ export function ImportWorkbench({
                   </summary>
                   <ul className="mt-2 space-y-1">
                     {record.unrecognisedLines.map((line, i) => (
-                      <li key={`u${i}`} className="font-mono text-[11px] text-ink-muted">
+                      <li
+                        key={`u${i}`}
+                        className="break-all font-mono text-[11px] text-ink-muted"
+                      >
                         {line}
                       </li>
                     ))}
                     {record.notStored.map((entry, i) => (
-                      <li key={`n${i}`} className="text-[11px] leading-snug text-ink-muted">
-                        <code>{entry.rawText}</code> — {entry.reason}
+                      <li
+                        key={`n${i}`}
+                        className="break-words text-[11px] leading-snug text-ink-muted"
+                      >
+                        <code className="break-all">{entry.rawText}</code> — {entry.reason}
                       </li>
                     ))}
                   </ul>
@@ -660,8 +924,8 @@ export function ImportWorkbench({
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={pending || tooManyDays}
-              className="rounded border border-line-strong px-4 py-1.5 text-sm transition-colors hover:border-accent disabled:opacity-40"
+              disabled={pending || tooManyDays || blocked.length > 0}
+              className="inline-flex min-h-11 items-center rounded border border-line-strong px-4 text-sm transition-colors hover:border-accent disabled:opacity-40"
             >
               {pending
                 ? 'Importing…'
@@ -671,41 +935,125 @@ export function ImportWorkbench({
               type="button"
               onClick={() => setPreview(null)}
               disabled={pending}
-              className="text-xs text-ink-faint hover:text-ink-muted disabled:opacity-40"
+              className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-ink-muted disabled:opacity-40"
             >
               Discard
             </button>
           </div>
+
+          {blocked.length > 0 && (
+            <p className="rounded border border-bad/40 bg-bad/5 px-3 py-2 text-sm leading-relaxed text-bad">
+              {blocked.length} value{blocked.length === 1 ? '' : 's'} cannot be stored, so
+              nothing can be imported yet: {blocked.slice(0, 5).join(', ')}
+              {blocked.length > 5 && `, and ${blocked.length - 5} more`}. Correct each one
+              marked <span className="uppercase">invalid</span> above, or clear it — a
+              cleared field is recorded as not logged.
+            </p>
+          )}
         </div>
       )}
 
-      {result && (
-        <div
-          role="status"
-          className={`space-y-2 rounded border px-3 py-2 text-sm ${
-            result.ok
-              ? 'border-good/40 bg-good/5 text-good'
-              : 'border-warn/40 bg-warn/5 text-warn'
-          }`}
-        >
-          <p>{result.message}</p>
-          {result.records.length > 0 && (
-            <ul className="space-y-1 text-[11px]">
-              {result.records.map((record, i) => (
-                <li key={i} className="tabular">
-                  {record.date} — {record.status.toLowerCase()}: {record.message}
-                </li>
-              ))}
-            </ul>
-          )}
-          {result.errors && (
-            <ul className="space-y-1 text-[11px]">
-              {Object.entries(result.errors).map(([path, message]) => (
-                <li key={path}><code>{path}</code> — {message}</li>
-              ))}
-            </ul>
-          )}
+      {result && <ImportReport result={result} />}
+    </div>
+  );
+}
+
+/**
+ * What the import actually did, from what it actually wrote.
+ *
+ * "Imported 9 rows." was true and useless: it could not be checked against the
+ * paste, and it could not distinguish a day that wrote a nutrition log from
+ * one that wrote nothing at all. Every figure here comes from the outcomes the
+ * server returned - the tables it wrote and how many rows - rather than from
+ * categories assumed in advance, so a destination that received nothing simply
+ * does not appear.
+ */
+function ImportReport({ result }: { result: ImportResult }) {
+  const summary = summariseImport(result.records);
+
+  return (
+    <div
+      role="status"
+      className={`space-y-4 rounded-lg border p-4 text-sm ${
+        result.ok
+          ? 'border-good/40 bg-good/5'
+          : 'border-warn/40 bg-warn/5'
+      }`}
+    >
+      <p className={result.ok ? 'text-good' : 'text-warn'}>{result.message}</p>
+
+      {summary.groups.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
+            What was written, and where to see it
+          </h3>
+          <ul className="divide-y divide-line/60">
+            {summary.groups.map((group) => (
+              <li
+                key={group.group}
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5"
+              >
+                <span className="text-ink">{group.group}</span>
+                <span className="tabular text-ink-muted">
+                  {group.rows} record{group.rows === 1 ? '' : 's'}
+                </span>
+                <span className="ml-auto text-[11px] text-ink-faint">{group.where}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      )}
+
+      <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line/60 pt-3 text-[11px] text-ink-muted">
+        <span className="tabular">
+          {summary.imported} day{summary.imported === 1 ? '' : 's'} imported
+        </span>
+        <span className="tabular">{summary.totalRows} records written</span>
+        {summary.duplicates > 0 && (
+          <span className="tabular">{summary.duplicates} already imported</span>
+        )}
+        {summary.skipped > 0 && (
+          <span className="tabular">{summary.skipped} had nothing to import</span>
+        )}
+        {summary.noChange > 0 && (
+          <span className="tabular">{summary.noChange} wrote nothing new</span>
+        )}
+        <span className={`tabular ${summary.failed > 0 ? 'text-bad' : ''}`}>
+          {summary.failed} failed
+        </span>
+      </div>
+
+      {result.records.length > 0 && (
+        <details className="border-t border-line/60 pt-3">
+          <summary className="cursor-pointer text-[11px] text-ink-faint">
+            Day by day
+          </summary>
+          <ul className="mt-2 space-y-1.5 text-[11px]">
+            {result.records.map((record, i) => (
+              <li key={i} className="flex flex-wrap gap-x-2">
+                <span className="tabular text-ink-muted">{record.date}</span>
+                <span
+                  className={`uppercase tracking-wide ${
+                    record.status === 'FAILED' ? 'text-bad' : 'text-ink-faint'
+                  }`}
+                >
+                  {record.status.toLowerCase()}
+                </span>
+                <span className="text-ink-muted">{record.message}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {result.errors && (
+        <ul className="space-y-1 border-t border-line/60 pt-3 text-[11px] text-bad">
+          {Object.entries(result.errors).map(([path, message]) => (
+            <li key={path} className="break-words">
+              <code className="break-all">{path}</code> — {message}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

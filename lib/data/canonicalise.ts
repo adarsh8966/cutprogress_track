@@ -23,6 +23,26 @@ import { toNumber } from '@/lib/normalization/numbers';
 type Client = SupabaseClient<Database>;
 
 /**
+ * A timestamp column as a string the resolver can order.
+ *
+ * Same reasoning as toNumber() below: what a driver hands back for a
+ * `timestamptz` is not guaranteed to be a string. PostgREST serialises one to
+ * ISO-8601 text, PGlite returns a Date object, and Observation.recordedAt
+ * claims to be a string - so the claim is made true here rather than assumed.
+ *
+ * This matters more than it looks. recordedAt is what decides which of a day's
+ * observations is the current one, so a Date arriving where a string was
+ * expected does not degrade the ordering, it fails the whole day's rebuild.
+ * An unreadable timestamp becomes the empty string, which sorts oldest: a
+ * value that cannot say when it was recorded must not outrank one that can.
+ */
+function toIsoString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return '';
+}
+
+/**
  * Groups the day's raw rows into per-field observation lists.
  *
  * `value` is typed unknown because that is the truth about a column read back
@@ -35,12 +55,12 @@ function observation(
   id: string,
   value: unknown,
   source: DataSourceEnum,
-  recordedAt: string,
+  recordedAt: unknown,
   localDate: LocalDate,
 ): Observation | null {
   const numeric = toNumber(value);
   if (numeric === null) return null;
-  return { id, value: numeric, source, recordedAt, localDate };
+  return { id, value: numeric, source, recordedAt: toIsoString(recordedAt), localDate };
 }
 
 export async function rebuildDailyMetrics(
@@ -68,7 +88,21 @@ export async function rebuildDailyMetrics(
     if (obs) fields[key]!.push(obs);
   };
 
-  for (const row of body.data ?? []) {
+  /**
+   * Superseded observations are out of the resolution entirely (migration
+   * 0012), exactly as superseded sessions are out of the sums below.
+   *
+   * This is what makes a withdrawal expressible at all. Resolution is
+   * "newest wins", so a mistaken reading can be corrected by recording the
+   * right one - but there is no value that means "I did not weigh myself that
+   * day". Entering 0 would fabricate a measurement, which this system must
+   * never store. Marking the row superseded removes it from the day without
+   * removing it from the record.
+   */
+  const live = <T extends { superseded_at: string | null }>(rows: T[]): T[] =>
+    rows.filter((row) => row.superseded_at === null);
+
+  for (const row of live(body.data ?? [])) {
     push('weightKg', observation(row.id, row.weight_kg, row.source, row.measured_at, date));
     push('waistCm', observation(row.id, row.waist_cm, row.source, row.measured_at, date));
   }
@@ -80,12 +114,12 @@ export async function rebuildDailyMetrics(
     RESTING_HEART_RATE: 'restingHeartRate',
     HRV_MS: 'hrvMs',
   };
-  for (const row of metrics.data ?? []) {
+  for (const row of live(metrics.data ?? [])) {
     const field = METRIC_FIELD[row.metric];
     if (field) push(field, observation(row.id, row.value, row.source, row.measured_at, date));
   }
 
-  for (const row of nutrition.data ?? []) {
+  for (const row of live(nutrition.data ?? [])) {
     push('caloriesConsumed', observation(row.id, row.calories, row.source, row.logged_at, date));
     push('proteinG', observation(row.id, row.protein_g, row.source, row.logged_at, date));
     push('carbsG', observation(row.id, row.carbs_g, row.source, row.logged_at, date));
@@ -97,7 +131,7 @@ export async function rebuildDailyMetrics(
       observation(row.id, row.fruit_veg_servings, row.source, row.logged_at, date));
   }
 
-  for (const row of sleep.data ?? []) {
+  for (const row of live(sleep.data ?? [])) {
     push('sleepDurationMinutes',
       observation(row.id, row.duration_minutes, row.source, row.created_at, date));
     push('sleepScore', observation(row.id, row.sleep_score, row.source, row.created_at, date));
@@ -115,8 +149,8 @@ export async function rebuildDailyMetrics(
   // Superseded rows are corrections' predecessors: still on disk, deliberately
   // out of the sum. Without this, re-importing a day to fix a duration would
   // add the two readings together (58 + 65 = 123) instead of replacing one.
-  const cardioRows = (cardio.data ?? []).filter((r) => r.superseded_at === null);
-  const sessionRows = (sessions.data ?? []).filter((r) => r.superseded_at === null);
+  const cardioRows = live(cardio.data ?? []);
+  const sessionRows = live(sessions.data ?? []);
 
   const minutes = (r: { duration_minutes: unknown }) => toNumber(r.duration_minutes) ?? 0;
 

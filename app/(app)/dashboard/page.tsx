@@ -24,7 +24,7 @@ import { computeDataQuality } from '@/lib/analytics/dataQuality';
 import { forecastTargetDate } from '@/lib/analytics/forecast';
 import { generateRecommendations } from '@/lib/analytics/recommendations';
 import { latestPresent, mean, presentValues, trailingWindow } from '@/lib/analytics/series';
-import { kgToLb, cmToInches } from '@/lib/normalization/units';
+import { displayWeight, displayLength, unitsOf, unitLabels } from '@/lib/normalization/units';
 import type { DailyMetrics, DatedValue } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,13 @@ export default async function DashboardPage() {
   if (metrics.length === 0) {
     return <FirstRun hasProfile={loaded !== null} />;
   }
+
+  // The user's own units (spec §39). Analytics stay metric throughout; this is
+  // the boundary where a number becomes something to read.
+  const units = unitsOf(profile);
+  const label = unitLabels(units);
+  const asWeight = (kg: number) => displayWeight(kg, units.weight);
+  const asLength = (cm: number) => displayLength(cm, units.length);
 
   const weight = pick(metrics, 'weightKg');
   const waist = pick(metrics, 'waistCm');
@@ -89,23 +96,24 @@ export default async function DashboardPage() {
       ? Math.min(1, Math.max(0, (start - current) / (start - target)))
       : null;
 
-  const ratePerWeekLb = weightTrend.value ? kgToLb(weightTrend.value.perWeek) : null;
+  const ratePerWeek = weightTrend.value ? asWeight(weightTrend.value.perWeek) : null;
 
   return (
     <div className="space-y-8">
       {/* ------------------------------------------------ 1. Where am I? */}
       <section className="pt-4 text-center">
         <Figure
-          value={current === null ? null : formatNumber(kgToLb(current), 1)}
-          unit="lb"
+          value={current === null ? null : formatNumber(asWeight(current), 1)}
+          unit={label.weight}
           size="hero"
         />
         <div className="mt-3 text-sm text-ink-muted">
-          {ratePerWeekLb === null ? (
+          {ratePerWeek === null ? (
             <span className="text-ink-faint">rate not yet computable</span>
           ) : (
             <span className="tabular">
-              {ratePerWeekLb < 0 ? '↓' : '↑'} {formatNumber(Math.abs(ratePerWeekLb), 2)} lb/week
+              {ratePerWeek < 0 ? '↓' : '↑'} {formatNumber(Math.abs(ratePerWeek), 2)}{' '}
+              {label.weight}/week
             </span>
           )}
         </div>
@@ -122,14 +130,36 @@ export default async function DashboardPage() {
               />
             </div>
             <div className="mt-2 flex justify-between text-[11px] text-ink-faint">
-              <span className="tabular">{formatNumber(kgToLb(start), 0)} lb start</span>
               <span className="tabular">
-                {formatNumber(Math.abs(kgToLb(current! - target)), 1)} lb to go
+                {formatNumber(asWeight(start), 0)} {label.weight} start
               </span>
-              <span className="tabular">{formatNumber(kgToLb(target), 0)} lb target</span>
+              <span className="tabular">
+                {formatNumber(Math.abs(asWeight(current! - target)), 1)} {label.weight} to go
+              </span>
+              <span className="tabular">
+                {formatNumber(asWeight(target), 0)} {label.weight} target
+              </span>
             </div>
           </div>
         )}
+
+        {/* The day view is where today's figures and the records behind them
+            live. The Dashboard answers three questions and stops (spec §50), so
+            it points at the cockpit rather than growing into one. */}
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link
+            href={`/day/${end}`}
+            className="inline-flex min-h-11 items-center rounded border border-line-strong px-4 text-sm text-ink transition-colors hover:border-accent"
+          >
+            Today
+          </Link>
+          <Link
+            href={`/quick?date=${end}`}
+            className="inline-flex min-h-11 items-center rounded border border-line px-4 text-sm text-ink-muted transition-colors hover:border-accent"
+          >
+            Quick add
+          </Link>
+        </div>
       </section>
 
       {/* --------------------------------------- 3. What should I do? */}
@@ -184,8 +214,8 @@ export default async function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card title="Weight">
           <Figure
-            value={current === null ? null : formatNumber(kgToLb(current), 1)}
-            unit="lb"
+            value={current === null ? null : formatNumber(asWeight(current), 1)}
+            unit={label.weight}
             sub={<span className="text-ink-faint">7-day average</span>}
           />
           <Evidence derived={weightAvg} />
@@ -195,14 +225,14 @@ export default async function DashboardPage() {
           <Figure
             value={
               latestPresent(waist)?.value != null
-                ? formatNumber(cmToInches(latestPresent(waist)!.value!), 1)
+                ? formatNumber(asLength(latestPresent(waist)!.value!), 1)
                 : null
             }
-            unit="in"
+            unit={label.length}
             sub={
               waistTrend.value ? (
                 <span className="tabular">
-                  {formatNumber(cmToInches(waistTrend.value.perWeek), 2)} in/week
+                  {formatNumber(asLength(waistTrend.value.perWeek), 2)} {label.length}/week
                 </span>
               ) : (
                 <span className="text-ink-faint">trend not yet computable</span>
