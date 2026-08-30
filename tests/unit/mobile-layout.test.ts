@@ -94,6 +94,11 @@ describe('the tables that were widened have been stacked instead', () => {
     ['components/training/TrainingView.tsx', 'exercise progression'],
     ['app/(app)/training/[sessionId]/page.tsx', 'the session\'s sets'],
     ['components/import/ImportWorkbench.tsx', 'the import review fields'],
+    // Session history now opens onto a workout's exercises and sets inline,
+    // which is the same hazard on the same page: a set has a load, reps, RPE
+    // and a qualifier, and laying those in columns is how the last two end up
+    // off the right-hand edge of a phone.
+    ['components/training/WorkoutDetail.tsx', "a workout's exercises and sets"],
   ])('%s lays out %s without a fixed-width table', (file) => {
     const source = readFileSync(join(ROOT, file), 'utf8');
     expect(source).not.toMatch(/<table/);
@@ -121,6 +126,9 @@ describe('interactive controls are big enough to tap', () => {
       'components/import/ImportWorkbench.tsx',
       'components/quick/QuickEntryForm.tsx',
       'components/day/DayRecords.tsx',
+      // Every collapsed section and every workout row on Training is one of
+      // these summaries, so the floor is set here rather than at each caller.
+      'components/ui/Disclosure.tsx',
     ]) {
       const source = readFileSync(join(ROOT, file), 'utf8');
       expect(source, `${file} has no minimum tap target`).toMatch(/min-h-(9|11|12)/);

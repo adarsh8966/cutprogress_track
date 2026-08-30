@@ -17,18 +17,33 @@
  * So the page reports the two separately and says which is which. Session
  * figures are true whether or not anything was logged inside them. Exercise
  * figures are absent - explicitly, by name - when no sets exist. Nothing here
- * derives a set, a volume or an RIR from a session.
+ * derives a set, a volume or an RIR from a session. The two overview lines at
+ * the top are that same distinction, compressed: the labels are what keep it
+ * legible now that the figures no longer have a card each.
+ *
+ * WHAT IS OPEN, AND WHY SO LITTLE IS.
+ *
+ * The page opens on the question it is named after - what did I train? - and
+ * nothing else. Session history is the page. Every analysis below it is real,
+ * kept, and closed: progression across workouts, records, muscle-group balance
+ * and week-by-week consistency answer questions worth asking, but not all at
+ * once and not before being asked. Nothing was removed to achieve that; a
+ * section that is closed is one click from open, and the Evidence panel behind
+ * every figure comes with it.
  */
-import { Card, Figure, StatusDot, formatNumber, type Status } from '@/components/ui/primitives';
+import { Figure, StatusDot, formatNumber, type Status } from '@/components/ui/primitives';
+import { DisclosureSection } from '@/components/ui/Disclosure';
 import { Evidence } from '@/components/ui/Evidence';
 import { HorizontalBars } from '@/components/charts/HorizontalBars';
 import { WorkoutLogger } from '@/components/training/WorkoutLogger';
 import { SessionHistory } from '@/components/training/SessionHistory';
-import { displayWeight, type WeightUnit, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
+import {
+  displayWeight, unitLabels, type DisplayUnits,
+} from '@/lib/normalization/units';
 import type { Exercise } from '@/lib/health/catalog';
 import type { Derived } from '@/lib/types';
 import type {
-  TrainingSession, SessionSummary, TrainingSummary,
+  Workout, LoggedSet, SessionSummary, TrainingSummary,
   ExercisePerformance, ProgressionResult,
 } from '@/lib/analytics/training';
 import type { ExerciseRecords, TrainingConsistency } from '@/lib/analytics/prs';
@@ -48,40 +63,113 @@ function formatDuration(minutes: number): string {
   return `${hours}h ${formatNumber(minutes - hours * 60, 0)}m`;
 }
 
+/** "5 exercises", "1 exercise". A closed section says how much is inside it. */
+function count(n: number, noun: string): string {
+  return `${formatNumber(n)} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 export interface ExerciseRow {
   performance: Derived<ExercisePerformance>;
   progression: Derived<ProgressionResult>;
 }
 
+/**
+ * One line of the overview: what this axis measures, and its figures.
+ *
+ * The label is not decoration. It is the only thing keeping session-level and
+ * exercise-level figures from reading as one list of numbers about the same
+ * thing, now that they no longer sit in separately titled cards.
+ */
+function OverviewLine({
+  label,
+  facts,
+  derived,
+}: {
+  label: string;
+  facts: string[];
+  derived: Derived<unknown>;
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
+      <span className="w-24 shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
+        {label}
+      </span>
+      <span className="tabular text-sm text-ink">{facts.join(' · ')}</span>
+      <span className="ml-auto">
+        <Evidence derived={derived} />
+      </span>
+    </div>
+  );
+}
+
 export function TrainingView({
-  sessions,
+  workouts,
+  unattachedSets,
   sessionSummary,
   summary,
-  setCountBySession,
   rows,
   records,
   consistency,
   today,
   exercises,
-  weightUnit,
+  units,
 }: {
-  sessions: TrainingSession[];
+  workouts: Workout[];
+  /** Sets belonging to no supplied session. Should always be empty. */
+  unattachedSets: LoggedSet[];
   sessionSummary: Derived<SessionSummary>;
   summary: Derived<TrainingSummary>;
-  setCountBySession: Map<string, number>;
   rows: ExerciseRow[];
   records: Derived<ExerciseRecords[]>;
   consistency: Derived<TrainingConsistency>;
   today: string;
   exercises: Exercise[];
-  /** The user's display unit. Loads are stored in kg and read in this. */
-  weightUnit: WeightUnit;
+  /** The user's display units. Loads are stored in kg and read in these. */
+  units: DisplayUnits;
 }) {
   const s = sessionSummary.value;
-  const weightLabel = WEIGHT_UNIT_LABEL[weightUnit];
-  const asWeight = (kg: number) => displayWeight(kg, weightUnit);
+  const weightLabel = unitLabels(units).weight;
+  const asWeight = (kg: number) => displayWeight(kg, units.weight);
   const hasSessions = (s?.totalSessions ?? 0) > 0;
   const hasSets = (summary.value?.totalWorkingSets ?? 0) > 0;
+
+  // Session-level figures. The first two always appear, stating absence where
+  // there is any; heart rate and calories appear only when a source recorded
+  // them, because Hevy sends neither and a permanent "not logged" for a field
+  // no source fills is noise rather than information.
+  const sessionFacts: string[] = [
+    `${formatNumber(s?.totalSessions ?? 0)} workout${(s?.totalSessions ?? 0) === 1 ? '' : 's'}`,
+    s?.totalMinutes == null ? 'duration not logged' : formatDuration(s.totalMinutes),
+  ];
+  if (s?.averageHeartRate != null) {
+    sessionFacts.push(`avg ${formatNumber(s.averageHeartRate, 0)} bpm`);
+  }
+  if (s?.maxHeartRate != null) {
+    sessionFacts.push(`peak ${formatNumber(s.maxHeartRate, 0)} bpm`);
+  }
+  if (s?.totalCalories != null) {
+    sessionFacts.push(`${formatNumber(s.totalCalories, 0)} kcal`);
+  }
+
+  // Exercise-level figures, from logged sets only.
+  const exerciseFacts: string[] = [
+    `${formatNumber(summary.value?.totalWorkingSets ?? 0)} working sets`,
+    summary.value?.totalVolumeKg == null
+      ? 'volume not logged'
+      : `${formatNumber(asWeight(summary.value.totalVolumeKg), 0)} ${weightLabel}`,
+  ];
+  // RPE and RIR are two ways of saying the same thing and different sources
+  // record different ones - Hevy records RPE, hand-logging here records RIR.
+  // The label says which is on screen, so the two are never conflated.
+  if (summary.value?.averageRpe != null) {
+    exerciseFacts.push(`Avg RPE ${formatNumber(summary.value.averageRpe, 1)}`);
+  }
+  if (summary.value?.averageRir != null) {
+    exerciseFacts.push(`Avg RIR ${formatNumber(summary.value.averageRir, 1)}`);
+  }
+  if (s) {
+    exerciseFacts.push(`in ${formatNumber(s.sessionsWithSets)} of ${formatNumber(s.totalSessions)}`);
+  }
 
   return (
     <div className="space-y-8">
@@ -94,157 +182,61 @@ export function TrainingView({
         </p>
       </header>
 
+      <section className="divide-y divide-line/60 border-y border-line/60">
+        <OverviewLine label="Sessions" facts={sessionFacts} derived={sessionSummary} />
+        <OverviewLine label="Exercises" facts={exerciseFacts} derived={summary} />
+      </section>
+
+      {!hasSets && (
+        <p className="rounded border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-ink-muted">
+          {hasSessions ? (
+            <>
+              No exercises or sets logged yet.{' '}
+              <span className="text-ink-faint">
+                {s!.sessionsWithoutSets} of your {s!.totalSessions} recorded
+                session{s!.totalSessions === 1 ? '' : 's'} came in as a summary, which
+                records the session but not what was performed. Volume, RIR and
+                progression need set-level data — open a session to add its
+                exercises.
+              </span>
+            </>
+          ) : (
+            'No exercises or sets logged yet.'
+          )}
+        </p>
+      )}
+
+      {/*
+        A set whose session is not on this page would be data written and read
+        by nothing - the failure this codebase keeps finding. It should be
+        unreachable, and it says so out loud rather than being filtered away.
+      */}
+      {unattachedSets.length > 0 && (
+        <p className="rounded border border-warn/40 bg-surface px-4 py-3 text-sm text-warn">
+          {unattachedSets.length} logged set
+          {unattachedSets.length === 1 ? '' : 's'} belong to a session that is not in
+          this window. They are stored and are not counted above.
+        </p>
+      )}
+
       {/* ---------------------------------------------------------------- */}
-      {/* Session level: true for every recorded session, imported or not.  */}
+      {/* The page: what was trained, and what was done inside each of them. */}
       {/* ---------------------------------------------------------------- */}
-      <section className="space-y-4">
+      <section className="space-y-2">
         <h2 className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
-          Training sessions
+          Session history
         </h2>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card title="Sessions">
-            <Figure value={s ? formatNumber(s.totalSessions) : null} size="sm" />
-          </Card>
-          <Card title="Training time">
-            <Figure
-              value={s?.totalMinutes == null ? null : formatDuration(s.totalMinutes)}
-              size="sm"
-            />
-          </Card>
-          <Card title="Average heart rate">
-            <Figure
-              value={s?.averageHeartRate == null ? null : formatNumber(s.averageHeartRate, 0)}
-              unit="bpm"
-              size="sm"
-              sub={
-                s?.maxHeartRate == null
-                  ? undefined
-                  : `peak ${formatNumber(s.maxHeartRate, 0)} bpm`
-              }
-            />
-          </Card>
-          <Card title="Calories burned">
-            <Figure
-              value={s?.totalCalories == null ? null : formatNumber(s.totalCalories, 0)}
-              unit="kcal"
-              size="sm"
-            />
-            <Evidence derived={sessionSummary} />
-          </Card>
-        </div>
-
-        {s && s.byType.length > 0 && (
-          <Card title="Sessions by type">
-            <HorizontalBars
-              rows={s.byType.map((type) => ({
-                label: type.sessionType.replaceAll('_', ' ').toLowerCase(),
-                value: type.sessions,
-                sub: type.minutes === null ? 'duration not logged' : formatDuration(type.minutes),
-              }))}
-              unit="sessions"
-            />
-          </Card>
-        )}
-
-        <Card title="Session history">
-          <SessionHistory sessions={sessions} setCountBySession={setCountBySession} />
-        </Card>
+        <SessionHistory workouts={workouts} units={units} />
       </section>
 
       {/* ---------------------------------------------------------------- */}
-      {/* Exercise level: only ever from logged sets. Absent, never faked.  */}
+      {/* Analysis across workouts. Kept, and closed until asked for.       */}
       {/* ---------------------------------------------------------------- */}
-      <section className="space-y-4">
-        <h2 className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
-          Exercises and sets
-        </h2>
-
-        {!hasSets && (
-          <p className="rounded border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-ink-muted">
-            {hasSessions ? (
-              <>
-                No exercises or sets logged yet.{' '}
-                <span className="text-ink-faint">
-                  {s!.sessionsWithoutSets} of your {s!.totalSessions} recorded
-                  session{s!.totalSessions === 1 ? '' : 's'} came in as a summary, which
-                  records the session but not what was performed. Volume, RIR and
-                  progression need set-level data — open a session to add its
-                  exercises.
-                </span>
-              </>
-            ) : (
-              'No exercises or sets logged yet.'
-            )}
-          </p>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card title="Sessions with sets">
-            <Figure value={s ? formatNumber(s.sessionsWithSets) : null} size="sm" />
-          </Card>
-          <Card title="Working sets">
-            <Figure
-              value={summary.value ? formatNumber(summary.value.totalWorkingSets) : null}
-              size="sm"
-            />
-          </Card>
-          <Card title="Volume">
-            <Figure
-              value={
-                summary.value?.totalVolumeKg == null
-                  ? null
-                  : formatNumber(asWeight(summary.value.totalVolumeKg), 0)
-              }
-              unit={weightLabel}
-              size="sm"
-            />
-          </Card>
-          {/*
-            RPE and RIR are two ways of saying the same thing and different
-            sources record different ones - Hevy records RPE, hand-logging here
-            records RIR. Showing whichever exists beats showing an empty card
-            for the one that does not; the label says which is on screen, so
-            the two are never silently conflated.
-          */}
-          <Card title={summary.value?.averageRpe == null ? 'Average RIR' : 'Average RPE'}>
-            <Figure
-              value={
-                summary.value?.averageRpe != null
-                  ? formatNumber(summary.value.averageRpe, 1)
-                  : summary.value?.averageRir == null
-                    ? null
-                    : formatNumber(summary.value.averageRir, 1)
-              }
-              size="sm"
-              sub={
-                summary.value?.averageRpe != null && summary.value?.averageRir != null
-                  ? `RIR ${formatNumber(summary.value.averageRir, 1)}`
-                  : undefined
-              }
-            />
-            <Evidence derived={summary} />
-          </Card>
-        </div>
-
-        <Card title="Sets per muscle group">
-          {(summary.value?.byMuscleGroup ?? []).length === 0 ? (
-            <p className="py-6 text-sm text-ink-faint">
-              No exercises or sets logged yet.
-            </p>
-          ) : (
-            <HorizontalBars
-              rows={(summary.value?.byMuscleGroup ?? []).map((group) => ({
-                label: group.muscleGroup,
-                value: group.sets,
-                sub: `${group.sessions} session${group.sessions === 1 ? '' : 's'}`,
-              }))}
-              unit="sets"
-            />
-          )}
-        </Card>
-
-        <Card title="Exercise progression">
+      <div className="space-y-3">
+        <DisclosureSection
+          title="Exercise progression"
+          sub={rows.length === 0 ? 'nothing logged yet' : count(rows.length, 'exercise')}
+        >
           {rows.length === 0 ? (
             <p className="text-sm text-ink-faint">No exercises logged yet.</p>
           ) : (
@@ -342,103 +334,142 @@ export function TrainingView({
               </p>
             </div>
           )}
-        </Card>
-      </section>
+        </DisclosureSection>
 
-      {records.value !== null && records.value.length > 0 && (
-        <Card title="Personal records">
-          <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
-            Derived from your own logged sets — Hevy publishes no personal-record
-            data, so every figure here can show its working. A record keeps the
-            date it was first reached; matching it again does not move it.
-          </p>
-          <ul className="divide-y divide-line/60">
-            {records.value.slice(0, 12).map((record) => (
-              <li
-                key={record.exerciseId}
-                className="py-3 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
-              >
-                <span className="text-sm text-ink">
-                  {record.exerciseName}
-                  {record.setOnLastSession && (
-                    <span className="ml-2 text-[11px] text-good">new</span>
-                  )}
-                </span>
-                <span className="mt-1 flex flex-wrap items-baseline gap-x-4 text-sm sm:mt-0 sm:contents">
-                  <span className="tabular">
-                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Heaviest</span>
-                    {record.heaviest === null
-                      ? '—'
-                      : `${formatNumber(asWeight(record.heaviest.value), 0)} ${weightLabel}`}
+        {records.value !== null && records.value.length > 0 && (
+          <DisclosureSection
+            title="Personal records"
+            sub={count(records.value.length, 'exercise')}
+          >
+            <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
+              Derived from your own logged sets — Hevy publishes no personal-record
+              data, so every figure here can show its working. A record keeps the
+              date it was first reached; matching it again does not move it.
+            </p>
+            <ul className="divide-y divide-line/60">
+              {records.value.slice(0, 12).map((record) => (
+                <li
+                  key={record.exerciseId}
+                  className="py-3 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
+                >
+                  <span className="text-sm text-ink">
+                    {record.exerciseName}
+                    {record.setOnLastSession && (
+                      <span className="ml-2 text-[11px] text-good">new</span>
+                    )}
                   </span>
-                  <span className="tabular">
-                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Most reps</span>
-                    {record.mostReps?.value ?? '—'}
+                  <span className="mt-1 flex flex-wrap items-baseline gap-x-4 text-sm sm:mt-0 sm:contents">
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Heaviest</span>
+                      {record.heaviest === null
+                        ? '—'
+                        : `${formatNumber(asWeight(record.heaviest.value), 0)} ${weightLabel}`}
+                    </span>
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Most reps</span>
+                      {record.mostReps?.value ?? '—'}
+                    </span>
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Best e1RM</span>
+                      {record.bestEstimated1rm === null
+                        ? '—'
+                        : `${formatNumber(asWeight(record.bestEstimated1rm.value), 0)} ${weightLabel}`}
+                    </span>
                   </span>
-                  <span className="tabular">
-                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Best e1RM</span>
-                    {record.bestEstimated1rm === null
-                      ? '—'
-                      : `${formatNumber(asWeight(record.bestEstimated1rm.value), 0)} ${weightLabel}`}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <Evidence derived={records} />
-        </Card>
-      )}
+                </li>
+              ))}
+            </ul>
+            <Evidence derived={records} />
+          </DisclosureSection>
+        )}
 
-      {consistency.value !== null && (
-        <Card title="Training consistency">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Figure
-              value={
-                consistency.value.sessionsPerWeek === null
-                  ? null
-                  : formatNumber(consistency.value.sessionsPerWeek, 1)
-              }
-              unit="/week"
-              size="sm"
-              sub="sessions"
+        {s && s.byType.length > 0 && (
+          <DisclosureSection title="Sessions by type" sub={count(s.byType.length, 'type')}>
+            <HorizontalBars
+              rows={s.byType.map((type) => ({
+                label: type.sessionType.replaceAll('_', ' ').toLowerCase(),
+                value: type.sessions,
+                sub: type.minutes === null ? 'duration not logged' : formatDuration(type.minutes),
+              }))}
+              unit="sessions"
             />
-            <Figure
-              value={
-                consistency.value.averageSessionMinutes === null
-                  ? null
-                  : formatNumber(consistency.value.averageSessionMinutes, 0)
-              }
-              unit="min"
-              size="sm"
-              sub="average session"
-            />
-            <Figure
-              value={
-                consistency.value.averageRpe === null
-                  ? null
-                  : formatNumber(consistency.value.averageRpe, 1)
-              }
-              size="sm"
-              sub="average RPE"
-            />
-          </div>
-          <HorizontalBars
-            rows={consistency.value.weeks.map((week) => ({
-              label: week.weekStart,
-              value: week.sessions,
-              sub: week.minutes === null
-                ? 'no duration logged'
-                : formatDuration(week.minutes),
-            }))}
-            unit="sessions"
-          />
-          <Evidence derived={consistency} />
-        </Card>
-      )}
+          </DisclosureSection>
+        )}
 
-      <Card title="Log a workout">
-        <WorkoutLogger today={today} exercises={exercises} weightUnit={weightLabel} />
-      </Card>
+        {(summary.value?.byMuscleGroup ?? []).length > 0 && (
+          <DisclosureSection
+            title="Sets per muscle group"
+            sub={count((summary.value?.byMuscleGroup ?? []).length, 'group')}
+          >
+            <HorizontalBars
+              rows={(summary.value?.byMuscleGroup ?? []).map((group) => ({
+                label: group.muscleGroup,
+                value: group.sets,
+                sub: `${group.sessions} session${group.sessions === 1 ? '' : 's'}`,
+              }))}
+              unit="sets"
+            />
+          </DisclosureSection>
+        )}
+
+        {consistency.value !== null && (
+          <DisclosureSection
+            title="Training consistency"
+            sub={
+              consistency.value.sessionsPerWeek === null
+                ? undefined
+                : `${formatNumber(consistency.value.sessionsPerWeek, 1)} per week`
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Figure
+                value={
+                  consistency.value.sessionsPerWeek === null
+                    ? null
+                    : formatNumber(consistency.value.sessionsPerWeek, 1)
+                }
+                unit="/week"
+                size="sm"
+                sub="sessions"
+              />
+              <Figure
+                value={
+                  consistency.value.averageSessionMinutes === null
+                    ? null
+                    : formatNumber(consistency.value.averageSessionMinutes, 0)
+                }
+                unit="min"
+                size="sm"
+                sub="average session"
+              />
+              <Figure
+                value={
+                  consistency.value.averageRpe === null
+                    ? null
+                    : formatNumber(consistency.value.averageRpe, 1)
+                }
+                size="sm"
+                sub="average RPE"
+              />
+            </div>
+            <HorizontalBars
+              rows={consistency.value.weeks.map((week) => ({
+                label: week.weekStart,
+                value: week.sessions,
+                sub: week.minutes === null
+                  ? 'no duration logged'
+                  : formatDuration(week.minutes),
+              }))}
+              unit="sessions"
+            />
+            <Evidence derived={consistency} />
+          </DisclosureSection>
+        )}
+
+        <DisclosureSection title="Log a workout" sub="by hand">
+          <WorkoutLogger today={today} exercises={exercises} weightUnit={weightLabel} />
+        </DisclosureSection>
+      </div>
     </div>
   );
 }

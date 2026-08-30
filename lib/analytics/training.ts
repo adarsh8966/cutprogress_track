@@ -228,6 +228,11 @@ export interface ExerciseBlock {
   index: number | null;
   /** The note on the exercise. Carried on every set; shown once. */
   notes: string | null;
+  /**
+   * The source's own superset group for this exercise, carried on every set of
+   * it. NULL means the source did not record one - not that there was none.
+   */
+  supersetId: number | null;
   sets: LoggedSet[];
 }
 
@@ -242,10 +247,17 @@ export function groupByExercise(sets: LoggedSet[]): ExerciseBlock[] {
       exerciseName: set.exerciseName,
       index: set.exerciseIndex,
       notes: set.exerciseNotes,
+      supersetId: set.supersetId,
       sets: [],
     };
     // The first note wins, and any set of the block carries the same one.
     block.notes = block.notes ?? set.exerciseNotes;
+    // `??`, NOT `||`. Hevy numbers supersets from ZERO, so 0 is a real group
+    // and not an absent one. Any truthiness test on this value - here, or in
+    // anything that reads it - erases the first superset of a workout while
+    // leaving every later one correct, which is the shape of bug that gets
+    // shipped. NULL is the only thing that means "not in one".
+    block.supersetId = block.supersetId ?? set.supersetId;
     block.sets.push(set);
     blocks.set(key, block);
   }
@@ -256,6 +268,144 @@ export function groupByExercise(sets: LoggedSet[]): ExerciseBlock[] {
     if (ai !== bi) return ai - bi;
     return a.exerciseName.localeCompare(b.exerciseName);
   });
+}
+
+/**
+ * Exercises the source grouped together and performed as one.
+ *
+ * Membership is by BLOCK KEY rather than by mutating the blocks, so the result
+ * is a plain array: it serialises, which matters for anything downstream that
+ * has to send this somewhere.
+ */
+export interface SupersetGroup {
+  /** The source's own id, kept verbatim rather than renumbered. */
+  supersetId: number;
+  /** ExerciseBlock keys, in the order performed. Always two or more. */
+  blockKeys: string[];
+}
+
+/**
+ * Consecutive blocks sharing a superset id, folded into groups.
+ *
+ * CONSECUTIVE, and only consecutive. The same id reappearing after an
+ * unrelated exercise is two groups, not one - for the reason groupByExercise
+ * keys on position: joining them would claim a pairing the source did not
+ * record, and report work done apart as if it were done together.
+ *
+ * A run of ONE yields no group. A superset of one exercise is not a superset;
+ * the block keeps its raw supersetId either way, so nothing is lost by
+ * declining to name it.
+ */
+export function supersetGroups(blocks: ExerciseBlock[]): SupersetGroup[] {
+  const groups: SupersetGroup[] = [];
+  let run: SupersetGroup | null = null;
+
+  for (const block of blocks) {
+    if (block.supersetId === null) {
+      run = null;
+      continue;
+    }
+    if (run !== null && run.supersetId === block.supersetId) {
+      run.blockKeys.push(block.key);
+      continue;
+    }
+    run = { supersetId: block.supersetId, blockKeys: [block.key] };
+    groups.push(run);
+  }
+
+  return groups.filter((group) => group.blockKeys.length > 1);
+}
+
+/**
+ * One workout, whole: the session that happened and the exercises inside it.
+ *
+ * This is the shape the rest of the application should read a workout in, and
+ * it is deliberately provider-agnostic - it is composed from TrainingSession
+ * and LoggedSet, neither of which knows Hevy exists. A workout logged by hand
+ * and one synchronised from an external source compose identically, so a second
+ * provider changes nothing downstream of the writer that stores it.
+ *
+ * The session is REFERENCED, not copied. Date, title, duration, heart rate and
+ * notes are read from `session`; nothing is duplicated onto this object, so
+ * there is one home per fact and no second copy to drift.
+ */
+export interface Workout {
+  session: TrainingSession;
+  /** Exercises in the order the source performed them. Empty for a summary. */
+  exercises: ExerciseBlock[];
+  supersets: SupersetGroup[];
+  /** Sets recorded against this session, warm-ups included. */
+  setsLogged: number;
+  /** Warm-ups excluded - the basis every other set figure in the app uses. */
+  workingSets: number;
+  /**
+   * summariseTraining over THIS workout's own sets, so a per-workout average
+   * and the page total are the same calculation over different slices rather
+   * than two calculations that can drift. A session with no sets gets a real
+   * summary reporting zero working sets and a NULL volume, never a zero one.
+   */
+  summary: Derived<TrainingSummary>;
+}
+
+export interface ComposedTraining {
+  /** Most recent first. Sessions sharing a date keep the caller's order. */
+  workouts: Workout[];
+  /**
+   * Sets whose session was not among those supplied.
+   *
+   * This should be unreachable - getLoggedSets reads sets through their
+   * sessions - and it is surfaced rather than dropped precisely because of
+   * that. A set written faithfully and read by nothing is the failure mode
+   * this codebase keeps finding; silently filtering one here would hide the
+   * next instance of it.
+   */
+  unattachedSets: LoggedSet[];
+}
+
+/**
+ * Sessions and sets, composed into workouts (spec §11, §12).
+ *
+ * Nothing is filtered: a session that was planned and not completed still
+ * composes, because summariseSessions applies its own `completed` rule and a
+ * second, quieter rule here could disagree with it. What to show is the
+ * caller's decision.
+ *
+ * Nothing is measured that was not recorded either. The exercise order is the
+ * source's, already resolved into exerciseIndex by the reader, and is not
+ * re-derived here.
+ */
+export function composeTraining(
+  sessions: TrainingSession[],
+  sets: LoggedSet[],
+): ComposedTraining {
+  const bySession = new Map<string, LoggedSet[]>();
+  for (const set of sets) {
+    const bucket = bySession.get(set.sessionId);
+    if (bucket) bucket.push(set);
+    else bySession.set(set.sessionId, [set]);
+  }
+
+  const known = new Set(sessions.map((s) => s.id));
+  const unattachedSets = sets.filter((set) => !known.has(set.sessionId));
+
+  // A copy: sorting the caller's array in place would reorder a list that
+  // other figures on the same page are still reading.
+  const workouts = [...sessions]
+    .sort((a, b) => compareDates(b.date, a.date))
+    .map((session) => {
+      const own = bySession.get(session.id) ?? [];
+      const exercises = groupByExercise(own);
+      return {
+        session,
+        exercises,
+        supersets: supersetGroups(exercises),
+        setsLogged: own.length,
+        workingSets: workingSets(own).length,
+        summary: summariseTraining(own),
+      };
+    });
+
+  return { workouts, unattachedSets };
 }
 
 export function epley1rm(weightKg: number, reps: number): number {

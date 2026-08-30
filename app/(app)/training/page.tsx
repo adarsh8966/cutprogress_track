@@ -8,15 +8,23 @@
  * from workout_sessions and exists whether or not anything was logged inside
  * it, while `sets` comes from workout_sets. Reading only the second is what
  * made an imported summary workout invisible on this page.
+ *
+ * They are then composed into workouts, once, here. Everything on the page
+ * that needs a workout - the history, and eventually anything else that wants
+ * the same tree - reads that one composition rather than each rebuilding its
+ * own from the flat arrays. That is what stopped the page and the analytics
+ * from disagreeing about what a workout contained.
  */
 import { getAnalyticsWindow, getExerciseLibrary } from '@/lib/data/queries';
 import { TrainingView } from '@/components/training/TrainingView';
 import {
-  summariseTraining, summariseSessions, exercisePerformance, exerciseProgression,
+  composeTraining, summariseTraining, summariseSessions,
+  exercisePerformance, exerciseProgression,
 } from '@/lib/analytics/training';
 import { personalRecords, trainingConsistency } from '@/lib/analytics/prs';
 import { todayForUser } from '@/app/actions/log';
 import { compareDates } from '@/lib/normalization/dates';
+import { unitsOf } from '@/lib/normalization/units';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 
 export const dynamic = 'force-dynamic';
@@ -36,10 +44,13 @@ export default async function TrainingPage() {
   const records = personalRecords(sets);
   const consistency = trainingConsistency(sessions, sets, today, 12);
 
-  const setCountBySession = new Map<string, number>();
-  for (const set of sets) {
-    setCountBySession.set(set.sessionId, (setCountBySession.get(set.sessionId) ?? 0) + 1);
-  }
+  // One workout per session, with its own exercises and sets attached. The
+  // composition is pure and happens HERE rather than in the view, so the view
+  // still renders from fixtures without a database. It is also a regrouping,
+  // not a second read: getAnalyticsWindow already returned every set, already
+  // ordered by exercise block and set number, so nothing is queried twice and
+  // nothing is stored twice to draw a workout.
+  const { workouts, unattachedSets } = composeTraining(sessions, sets);
 
   // One row per exercise actually performed, most recent first.
   const performed = [...new Set(sets.filter((s) => !s.warmup).map((s) => s.exerciseId))];
@@ -58,16 +69,16 @@ export default async function TrainingPage() {
 
   return (
     <TrainingView
-      sessions={sessions}
+      workouts={workouts}
+      unattachedSets={unattachedSets}
       sessionSummary={sessionSummary}
       summary={summary}
-      setCountBySession={setCountBySession}
       rows={rows}
       records={records}
       consistency={consistency}
       today={today}
       exercises={exercises}
-      weightUnit={(profile ?? DEFAULT_PROFILE).weightDisplayUnit}
+      units={unitsOf(profile ?? DEFAULT_PROFILE)}
     />
   );
 }

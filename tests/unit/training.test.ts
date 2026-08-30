@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   epley1rm, brzycki1rm, setVolume, workingSets, exercisePerformance,
-  exerciseProgression, volumeByMuscleGroup, summariseTraining, type LoggedSet,
+  exerciseProgression, volumeByMuscleGroup, summariseTraining, groupByExercise,
+  type LoggedSet,
 } from '@/lib/analytics/training';
 
 function set(overrides: Partial<LoggedSet> = {}): LoggedSet {
@@ -156,5 +157,34 @@ describe('muscle group volume (spec §12)', () => {
     ]);
     expect(summary.value!.averageRir).toBe(1);
     expect(summary.value!.averageRpe).toBe(9);
+  });
+});
+
+describe('grouping a workout by exercise', () => {
+  it('carries the exercise’s superset id onto its block', () => {
+    const blocks = groupByExercise([
+      set({ exerciseId: 'a', exerciseIndex: 0, supersetId: 3 }),
+      set({ exerciseId: 'a', exerciseIndex: 0, supersetId: 3, setNumber: 2 }),
+    ]);
+    expect(blocks[0]!.supersetId).toBe(3);
+  });
+
+  it('keeps a superset id of zero, which Hevy numbers from', () => {
+    const blocks = groupByExercise([set({ exerciseIndex: 0, supersetId: 0 })]);
+    // Not `|| null`, not `if (!supersetId)`: zero is a group, not an absence.
+    expect(blocks[0]!.supersetId).toBe(0);
+  });
+
+  it('leaves the superset id null when the source recorded none', () => {
+    const blocks = groupByExercise([set({ exerciseIndex: 0 })]);
+    expect(blocks[0]!.supersetId).toBeNull();
+  });
+
+  it('carries the exercise note, which every set of the block repeats', () => {
+    const blocks = groupByExercise([
+      set({ exerciseIndex: 0, exerciseNotes: 'Went up 5 lb.' }),
+      set({ exerciseIndex: 0, exerciseNotes: 'Went up 5 lb.', setNumber: 2 }),
+    ]);
+    expect(blocks[0]!.notes).toBe('Went up 5 lb.');
   });
 });

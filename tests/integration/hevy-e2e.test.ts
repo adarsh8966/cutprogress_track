@@ -31,7 +31,7 @@ import { runHevySync } from '@/lib/integrations/hevy/sync';
 import { joinLoggedSets, rowToTrainingSession, rowToDailyMetrics } from '@/lib/data/rows';
 import {
   summariseSessions, summariseTraining, exercisePerformance, exerciseProgression,
-  groupByExercise,
+  groupByExercise, composeTraining,
 } from '@/lib/analytics/training';
 import { personalRecords, trainingConsistency } from '@/lib/analytics/prs';
 import { displayWeight } from '@/lib/normalization/units';
@@ -250,6 +250,36 @@ describe('Hevy end to end, to the figures on screen', () => {
     // Per-set RPE, in the order performed.
     expect(blocks[0]!.sets.map((s) => [s.setNumber, s.rpe]))
       .toEqual([[1, 7], [2, 8], [3, 9]]);
+  });
+
+  it('composes the workouts the Training page now expands', async () => {
+    const { sessions, sets } = await read();
+    const { workouts, unattachedSets } = composeTraining(sessions, sets);
+
+    // Most recent first, which is the order the history lists them in.
+    expect(workouts.map((w) => w.session.date)).toEqual([DAY_TWO, DAY_ONE]);
+
+    // The exercise order survives every hop: Hevy's own indices, through the
+    // mapper, the writer, PostgreSQL, joinLoggedSets and the composition.
+    const [second, first] = workouts;
+    expect(second!.exercises.map((e) => e.exerciseName))
+      .toEqual(['Incline Dumbbell Press', 'Cable Lateral Raise']);
+    expect(second!.exercises[0]!.notes).toBe('Went up 5 lb and it moved well.');
+
+    // What the collapsed row prints for each of them.
+    expect(second!.setsLogged).toBe(5);
+    expect(second!.workingSets).toBe(5);
+    expect(second!.summary.value!.averageRpe).toBe(8.2);
+
+    // Day one logged a warm-up: recorded, counted as logged, and excluded
+    // from the average beside it.
+    expect(first!.setsLogged).toBe(4);
+    expect(first!.workingSets).toBe(3);
+    expect(first!.summary.value!.averageRpe).toBe(8);
+
+    // Neither workout used a superset, and none is invented for them.
+    expect(second!.supersets).toEqual([]);
+    expect(unattachedSets).toEqual([]);
   });
 
   it('reaches the canonical layer, and so the Dashboard', async () => {
