@@ -123,6 +123,15 @@ export async function getLoggedSets(from: LocalDate, to: LocalDate): Promise<Log
  * Superseded rows are excluded. A corrected import records a new row and marks
  * the old one (migration 0011), so the live row is the current truth and the
  * replaced one stays on disk for history.
+ *
+ * The ordering is a TOTAL order, not just a date one. Ordering by local_date
+ * alone left two sessions on the same day to come back in whatever sequence
+ * PostgREST happened to choose, which made the Training page's own order an
+ * accident. start_time settles it where it was recorded, with NULLS LAST
+ * spelled out because a descending sort in Postgres defaults to NULLS FIRST -
+ * which would float every date-only session above the timed ones and disagree
+ * with composeTraining. `id` is the final tiebreak, so a repeat of the same
+ * query returns the same sequence even for two rows that share both.
  */
 export async function getWorkoutSessions(
   from: LocalDate,
@@ -135,7 +144,9 @@ export async function getWorkoutSessions(
     .is('superseded_at', null)
     .gte('local_date', from)
     .lte('local_date', to)
-    .order('local_date', { ascending: false });
+    .order('local_date', { ascending: false })
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: true });
 
   if (error || !data) return [];
   return data.map(rowToTrainingSession);

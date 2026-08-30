@@ -22,6 +22,7 @@ import {
   summariseSessions, summariseTraining, exerciseProgression,
   type TrainingSession,
 } from '@/lib/analytics/training';
+import { toInstant } from '@/lib/data/rows';
 
 /** Verbatim, as reported. */
 const PASTE = `Date: 2026-08-27
@@ -77,6 +78,9 @@ type SessionRow = {
   duration_minutes: string | null; average_heart_rate: string | null;
   max_heart_rate: string | null; calories: string | null;
   notes: string | null; source: string; completed: boolean;
+  // Left as whatever the driver returns - a JS Date here, an ISO string in
+  // production - so toInstant is exercised on the shape PGlite really gives.
+  start_time: unknown; end_time: unknown;
 };
 
 function toDomain(rows: SessionRow[]): TrainingSession[] {
@@ -95,6 +99,8 @@ function toDomain(rows: SessionRow[]): TrainingSession[] {
     source: row.source,
     completed: row.completed,
     importId: null,
+    startTime: toInstant(row.start_time),
+    endTime: toInstant(row.end_time),
   }));
 }
 
@@ -194,7 +200,8 @@ describe('Aug 27 / Aug 28 import, end to end', () => {
       // date column, while PostgREST hands the app an ISO string.
       tx.query<SessionRow>(
         `select id, local_date::text, session_type, duration_minutes,
-                average_heart_rate, max_heart_rate, calories, notes, source, completed
+                average_heart_rate, max_heart_rate, calories, notes, source,
+                completed, start_time, end_time
            from workout_sessions where superseded_at is null
           order by local_date desc`,
       ),

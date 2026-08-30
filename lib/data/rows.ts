@@ -12,7 +12,7 @@
  * PostgREST returns numerics as strings in some configurations, and Number(null)
  * would produce 0 - the missing-data bug spec §33 exists to prevent.
  */
-import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
+import type { DailyMetrics, Instant, LocalDate, UserProfile } from '@/lib/types';
 import type {
   DailyMetricsRow, ProfileRow, WorkoutSetRow, WorkoutSessionRow, ExerciseRow,
 } from '@/lib/supabase/types';
@@ -41,6 +41,33 @@ export function toLocalDate(value: unknown): LocalDate {
   if (typeof value === 'string') return value.slice(0, 10);
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value);
+}
+
+/**
+ * A `timestamptz` column as the ISO-8601 string Instant claims to be.
+ *
+ * The same hazard as toLocalDate above, one column type over: PostgREST
+ * serialises a timestamptz to text, while node-postgres and PGlite hand back a
+ * Date object. Left uncoerced, a Date arrives where a string is declared, and
+ * every consumer that compares two of them as text silently stops ordering -
+ * which is the one thing these columns are being mapped for.
+ *
+ * Normalised to UTC, so two instants that came from two drivers, or that were
+ * written with different offsets, compare as strings as well as they compare
+ * as times. Postgres' own `2026-08-29 22:00:00+00` parses too.
+ *
+ * An unreadable value becomes null rather than a guess or an epoch: a time
+ * that cannot be read is not known, and null already means exactly that here
+ * (spec §7, §33).
+ */
+export function toInstant(value: unknown): Instant | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
 }
 
 export function rowToProfile(row: ProfileRow): UserProfile {
@@ -197,11 +224,24 @@ export function joinLoggedSets(
  * `external_source` are new columns, and a column that is selected but never
  * mapped is invisible to every page while looking perfectly healthy in the
  * database.
+ *
+ * `start_time` and `end_time` were exactly that for far longer. They have been
+ * written since 0004 by all three writers - the Hevy sync, the logger and the
+ * paste importer - selected by `select('*')` on every read, and mapped by
+ * nothing, so the true order of two sessions on one day was unknowable
+ * downstream of a table that had known it all along.
+ *
+ * duration_minutes is NOT re-derived from the pair. A row that has both
+ * instants and a null duration keeps the null: computing one would infer a
+ * measurement the source never reported, and it feeds the duration-weighted
+ * average heart rate in summariseSessions.
  */
 export function rowToTrainingSession(row: WorkoutSessionRow): TrainingSession {
   return {
     id: row.id,
     date: toLocalDate(row.local_date),
+    startTime: toInstant(row.start_time),
+    endTime: toInstant(row.end_time),
     sessionType: row.session_type as string,
     title: row.title,
     externalSource: row.external_source,

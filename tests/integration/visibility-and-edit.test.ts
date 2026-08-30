@@ -207,6 +207,7 @@ describe('a full imported day is visible, and every part of it can be corrected'
           durationMinutes: Number(row.duration_minutes),
           averageHeartRate: 142, maxHeartRate: 171, calories: 412,
           notes: 'Pull', source: SOURCE, completed: true, importId: null,
+          startTime: null, endTime: null,
         })),
         [],
       );

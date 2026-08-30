@@ -21,6 +21,17 @@
 /** ISO calendar date in the user's local timezone, `YYYY-MM-DD`. */
 export type LocalDate = string;
 
+/**
+ * An absolute moment, ISO-8601 with an offset.
+ *
+ * NOT a LocalDate. This is a point on the timeline, so it is the same instant
+ * in every timezone; a LocalDate is the calendar day the USER experienced it
+ * on, which is a question only the profile's timezone can answer (spec §40).
+ * The two are stored separately for that reason and neither is derived from
+ * the other at read time.
+ */
+export type Instant = string;
+
 export type DataSource =
   | 'MANUAL'
   | 'HEVY'

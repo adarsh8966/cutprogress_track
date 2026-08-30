@@ -181,6 +181,32 @@ produced no rows and an imported workout was invisible on the page named after
 it, while still being counted in `daily_metrics`, adherence and the Context
 Pack. Session-level and exercise-level reads are separate and both are wired.
 
+**Session timing.** `start_time` and `end_time` (both `timestamptz`, both
+nullable, present since `0004`) are written by all three writers — the Hevy sync
+records the instants the workout ran between, the logger stamps a start, and the
+paste importer leaves both null because a pasted summary records a day and
+nothing finer. Until they were mapped they were read by nothing, so two sessions
+on one day had no knowable order downstream of a table that had recorded it all
+along. `rowToTrainingSession` now maps them through `toInstant`, which normalises
+to UTC because PostgREST returns a timestamptz as text while PGlite and
+node-postgres return a `Date`.
+
+Two rules hold at that boundary:
+
+- `local_date` remains the authority on **which day** a session belongs to. It
+  was resolved in the profile's timezone when the row was written (§40), and the
+  readers are pure functions with no timezone to re-derive it with — 22:00 UTC
+  is still the 29th in New York and already the 30th in Tokyo.
+- `duration_minutes` is **not** derived from the interval. A row carrying both
+  instants and a null duration keeps the null: computing one would report a
+  measurement no source made, and it feeds the duration-weighted average heart
+  rate in `summariseSessions`.
+
+`getWorkoutSessions` orders `local_date desc, start_time desc nulls last, id`.
+`nulls last` is stated rather than assumed — a descending sort in Postgres
+defaults to NULLS FIRST, which would put every date-only session above the timed
+ones.
+
 `app/actions/import.ts` fans one confirmed day out across the raw layer:
 `body_measurements`, `nutrition_logs`, `metric_observations`, `sleep_records`,
 one `workout_sessions` row per training block and one `cardio_sessions` row per
