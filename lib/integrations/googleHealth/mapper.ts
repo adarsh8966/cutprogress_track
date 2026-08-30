@@ -22,12 +22,24 @@
  *     user's timezone (§40). A workout at 23:30 belongs to that day; a sleep
  *     session belongs to the morning it ended on, which is what
  *     sleep_records.local_date has always meant.
+ *
+ * IDENTITY IS RESOLVED HERE, AND IT HAS TWO FORMS. Google sends `name` for some
+ * data types and not for others, so every function below reads the timing
+ * FIRST and then asks for an identity: the provider's name when there is one,
+ * preserved exactly, and otherwise one minted from the fields that identify the
+ * observation (identity.ts). A point is refused only when it has neither - a
+ * record that cannot say when it was measured has no identity to mint and no
+ * place on a timeline, which was always the rule and still is.
  */
 import type { LocalDate } from '@/lib/types';
 import { toLocalDate } from '@/lib/normalization/dates';
 import { toSessionType, toCardioType } from '@/lib/health/sessionTypes';
 import type { SessionTypeEnum, CardioTypeEnum } from '@/lib/supabase/types';
 import type { DataTypeSpec, RecordType } from './registry';
+import {
+  contentVersion, derivedExternalId, GOOGLE_HEALTH_PROVIDER,
+  type IdentitySource, type IdentityTiming,
+} from './identity';
 import {
   asObject, at, civilDateAt, durationSeconds, instantAt, numAt,
   offsetSecondsAt, strAt, type GoogleDataPoint,
@@ -167,11 +179,60 @@ export function timingOf(
   };
 }
 
+/** An external identity, and which of the two kinds it is. */
+export interface ResolvedIdentity {
+  externalId: string;
+  identitySource: IdentitySource;
+}
+
+/**
+ * The provider's id, or one minted from what identifies the observation.
+ *
+ * A NAME IS TAKEN VERBATIM. It is Google's own resource name, it is stable, and
+ * the only correct thing to do with it is store it as it arrived - anything
+ * else and a record already on file under that name stops matching itself.
+ *
+ * The derived form is only reached when there is no name, and is built from the
+ * data type, the timing and the recording source (identity.ts), plus whatever
+ * the registry says separates two points of this type.
+ */
+function identityOf(
+  point: GoogleDataPoint,
+  dataType: string,
+  timing: IdentityTiming,
+  discriminators?: readonly (string | number | null)[],
+): ResolvedIdentity {
+  // Read tolerantly, like everything else here. The schema has already decided
+  // this point is readable; what travels onward is the raw record, so `name` is
+  // whatever the provider put there and an empty one is no name at all.
+  const provided = strAt(point, 'name');
+  if (provided !== null) {
+    return { externalId: provided, identitySource: 'PROVIDER' };
+  }
+  return {
+    externalId: derivedExternalId({
+      provider: GOOGLE_HEALTH_PROVIDER,
+      dataType,
+      timing,
+      dataSource: at(point, 'dataSource'),
+      discriminators,
+    }),
+    identitySource: 'DERIVED',
+  };
+}
+
 /** One normalised scalar observation, ready for the writer. */
 export interface NormalisedObservation {
   dataType: string;
   externalId: string;
+  /** Whether the id above is Google's or one CUT OS minted. */
+  identitySource: IdentitySource;
   externalUpdatedAt: string | null;
+  /**
+   * A digest of the record as it arrived, so a provider that does not version
+   * its records still has a version. See contentVersion in identity.ts.
+   */
+  contentVersion: string;
   recordType: RecordType;
   timing: RecordTiming;
   value: number | null;
@@ -202,26 +263,29 @@ function bounded(
 /**
  * Normalises one data point.
  *
- * Returns null only when the point has no usable identity or no usable time -
- * the two things without which nothing downstream can work. A point whose VALUE
- * cannot be read is still returned, with a null value, because the payload is
- * still worth keeping and "this arrived and had nothing in it" is a different
- * fact from "this never arrived".
+ * Returns null only when the point has no usable TIME - without which it has no
+ * place on a timeline, no day to land on, and nothing to mint an identity from.
+ * A point whose VALUE cannot be read is still returned, with a null value,
+ * because the payload is still worth keeping and "this arrived and had nothing
+ * in it" is a different fact from "this never arrived".
+ *
+ * A missing `name` is NOT a reason to refuse a point. It used to be, and that
+ * was the bug: most data types do not carry one.
  */
 export function mapDataPoint(
   point: GoogleDataPoint,
   spec: DataTypeSpec,
   options: { timezone: string },
 ): NormalisedObservation | null {
-  const externalId = point.name;
-  if (!externalId) return null;
-
   const timing = timingOf(point, spec, options.timezone);
   if (timing === null) return null;
 
   const body = bodyOf(point, spec.dataType);
   const warnings: string[] = [];
   const extracted = spec.extract(body);
+  const { externalId, identitySource } = identityOf(
+    point, spec.dataType, timing, spec.identity?.(body),
+  );
 
   const value = bounded(
     extracted?.value ?? null, LIMIT_FOR[spec.dataType], spec.label, warnings,
@@ -230,7 +294,9 @@ export function mapDataPoint(
   return {
     dataType: spec.dataType,
     externalId,
+    identitySource,
     externalUpdatedAt: instantAt(body, 'updateTime', 'lastModified', 'updatedAt'),
+    contentVersion: contentVersion(point),
     recordType: spec.record,
     timing,
     value,
@@ -249,7 +315,9 @@ export type SleepStageType = 'REM' | 'DEEP' | 'LIGHT' | 'AWAKE' | 'UNKNOWN';
 
 export interface NormalisedSleep {
   externalId: string;
+  identitySource: IdentitySource;
   externalUpdatedAt: string | null;
+  contentVersion: string;
   localDate: LocalDate;
   sleepStart: string | null;
   sleepEnd: string | null;
@@ -293,14 +361,19 @@ export function mapSleepSession(
   point: GoogleDataPoint,
   options: { timezone: string },
 ): NormalisedSleep | null {
-  const externalId = point.name;
-  if (!externalId) return null;
-
   const body = bodyOf(point, 'sleep');
   const sleepStart = instantAt(body, 'interval.startTime', 'startTime');
   const sleepEnd = instantAt(body, 'interval.endTime', 'endTime');
   const anchor = sleepEnd ?? sleepStart;
   if (anchor === null) return null;
+
+  const localDate = toLocalDate(new Date(anchor), options.timezone);
+  const { externalId, identitySource } = identityOf(point, 'sleep', {
+    observedAt: null,
+    intervalStart: sleepStart,
+    intervalEnd: sleepEnd,
+    localDate,
+  });
 
   const warnings: string[] = [];
   const stagesRaw = at(body, 'stages') ?? at(body, 'sleepStages');
@@ -350,8 +423,10 @@ export function mapSleepSession(
 
   return {
     externalId,
+    identitySource,
     externalUpdatedAt: instantAt(body, 'updateTime', 'updatedAt'),
-    localDate: toLocalDate(new Date(anchor), options.timezone),
+    contentVersion: contentVersion(point),
+    localDate,
     sleepStart,
     sleepEnd,
     durationMinutes: capped(durationMinutes),
@@ -371,7 +446,9 @@ export function mapSleepSession(
 
 export interface NormalisedExercise {
   externalId: string;
+  identitySource: IdentitySource;
   externalUpdatedAt: string | null;
+  contentVersion: string;
   localDate: LocalDate;
   startTime: string;
   endTime: string | null;
@@ -424,13 +501,20 @@ export function mapExerciseSession(
   point: GoogleDataPoint,
   options: { timezone: string },
 ): NormalisedExercise | null {
-  const externalId = point.name;
-  if (!externalId) return null;
-
   const body = bodyOf(point, 'exercise');
   const startTime = instantAt(body, 'interval.startTime', 'startTime');
   if (startTime === null) return null;
   const endTimeRaw = instantAt(body, 'interval.endTime', 'endTime');
+
+  const localDate = toLocalDate(new Date(startTime), options.timezone);
+  const { externalId, identitySource } = identityOf(point, 'exercise', {
+    observedAt: null,
+    intervalStart: startTime,
+    // The raw end, not the validated one below: an id must not change because
+    // a later reading of the same session had its end time dropped.
+    intervalEnd: endTimeRaw,
+    localDate,
+  });
 
   const warnings: string[] = [];
   // An interval that ends before it starts would be refused by the
@@ -481,8 +565,10 @@ export function mapExerciseSession(
 
   return {
     externalId,
+    identitySource,
     externalUpdatedAt: instantAt(body, 'updateTime', 'updatedAt'),
-    localDate: toLocalDate(new Date(startTime), options.timezone),
+    contentVersion: contentVersion(point),
+    localDate,
     startTime,
     endTime,
     durationMinutes: elapsedMinutes !== null && elapsedMinutes >= 0

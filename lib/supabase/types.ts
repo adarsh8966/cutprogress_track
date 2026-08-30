@@ -469,8 +469,18 @@ export type ExternalObservationRow = {
   provider: string;
   /** Google's own data type id, kebab-case, exactly as it appears in the path. */
   data_type: string;
+  /**
+   * The provider's own id where it sends one, and otherwise a `cutos:1/...`
+   * identity minted from what identifies the observation (0017).
+   */
   external_id: string;
   external_updated_at: string | null;
+  /**
+   * A digest of the record as it arrived, so a provider that does not version
+   * its records still has a version (0017). NULL only on rows written before
+   * that migration.
+   */
+  content_version: string | null;
   record_type: 'SAMPLE' | 'INTERVAL' | 'DAILY' | 'SESSION';
   observed_at: string | null;
   interval_start: string | null;

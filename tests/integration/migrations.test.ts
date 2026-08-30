@@ -304,6 +304,61 @@ describe('migrations', () => {
     ).rejects.toThrow();
   });
 
+  it('keys external observations on the content version too (0017)', async () => {
+    // 0016 keyed idempotency on the provider's updated_at alone, and most
+    // rollup data types do not send one - so every version was NULL, every
+    // version matched, and a day still accumulating could never be corrected.
+    const { rows } = await db.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes
+       where tablename = 'external_observations'
+         and indexname = 'external_observations_identity_idx'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indexdef).toMatch(/content_version/);
+    // coalesce on both, or a nullable column constrains nothing - which is the
+    // exact hole this migration exists to close.
+    expect(rows[0]!.indexdef).toMatch(/coalesce/i);
+  });
+
+  it('leaves content_version nullable, for the rows written before it existed', async () => {
+    const { rows } = await db.query<{ is_nullable: string }>(
+      `select is_nullable from information_schema.columns
+       where table_name = 'external_observations' and column_name = 'content_version'`,
+    );
+    expect(rows).toHaveLength(1);
+    // There is no honest way to compute a digest for a row imported before
+    // this column existed, and inventing one would be worse than the gap.
+    expect(rows[0]!.is_nullable).toBe('YES');
+  });
+
+  it('refuses a re-read of an unchanged record and admits a revised one', async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('content-version@example.com') returning id`,
+    );
+    const userId = rows[0]!.id;
+
+    // A rollup point: no external_updated_at at all, which is the case 0016
+    // could not tell apart from itself.
+    const store = (contentVersion: string, value: number) =>
+      db.query(
+        `insert into external_observations
+           (user_id, provider, data_type, external_id, content_version,
+            record_type, interval_start, interval_end, local_date, value)
+         values ($1, 'google-health', 'steps', 'cutos:1/google-health/steps/x',
+                 $2, 'INTERVAL', '2026-08-29T04:00:00Z', '2026-08-30T04:00:00Z',
+                 '2026-08-29', $3)`,
+        [userId, contentVersion, value],
+      );
+
+    await store('digest-of-3100', 3100);
+    // The same record again, byte for byte: refused by the database, which is
+    // what makes re-reading a window free.
+    await expect(store('digest-of-3100', 3100)).rejects.toThrow();
+    // The day's revised total: a different digest, so it gets through as a new
+    // row beside the old one, for the writer to supersede.
+    await expect(store('digest-of-8421', 8421)).resolves.toBeDefined();
+  });
+
   it('refuses a recommendation with no evidence (spec §57)', async () => {
     const { rows } = await db.query<{ id: string }>(
       `insert into auth.users (email) values ('evidence-check@example.com') returning id`,

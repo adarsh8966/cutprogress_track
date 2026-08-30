@@ -43,10 +43,11 @@ import type {
   NormalisedObservation, NormalisedSleep, NormalisedExercise,
 } from './mapper';
 import { GOOGLE_HEALTH_SOURCE } from './mapper';
+import { GOOGLE_HEALTH_PROVIDER } from './identity';
 
 type Client = SupabaseClient<Database>;
 
-export const GOOGLE_HEALTH_PROVIDER = 'google-health';
+export { GOOGLE_HEALTH_PROVIDER };
 /** The value written to external_source columns. Matches the data_source enum. */
 export const GOOGLE_HEALTH_EXTERNAL_SOURCE = 'GOOGLE_HEALTH';
 
@@ -101,9 +102,37 @@ function versionOf(value: unknown): string | null {
 interface ExistingRecord {
   id: string;
   externalUpdatedAt: string | null;
+  contentVersion: string | null;
   mappedTo: string | null;
   mappedId: string | null;
   supersededAt: string | null;
+}
+
+/**
+ * Whether the record that just arrived is the one already on file.
+ *
+ * TWO KEYS, BECAUSE ONE OF THEM IS OFTEN ABSENT. `external_updated_at` is the
+ * provider's own version and is authoritative where it exists - but most rollup
+ * data types do not send an `updateTime` at all, and comparing null to null
+ * made every re-read of a day look settled. A day still accumulating would then
+ * hold whatever partial figure the first sync of the morning happened to see,
+ * for good. So the content digest is compared too, and a revised value is a
+ * correction rather than a no-op.
+ *
+ * A ROW WRITTEN BEFORE content_version EXISTED cannot answer the second
+ * question, so it does not match, and the first sync after migration 0017
+ * re-writes it as a correction: same value, new row, predecessor superseded,
+ * nothing lost. That is a bounded one-off - only records inside a re-read
+ * window - and it is preferred to the alternative, which is a row that can
+ * never be told from a revision of itself and so can never be corrected again.
+ */
+function isSameVersion(
+  row: ExistingRecord,
+  externalUpdatedAt: string | null,
+  contentVersion: string,
+): boolean {
+  return row.externalUpdatedAt === externalUpdatedAt
+    && row.contentVersion === contentVersion;
 }
 
 /**
@@ -132,6 +161,7 @@ async function existingVersions(
     rows: (data ?? []).map((row) => ({
       id: row.id,
       externalUpdatedAt: versionOf(row.external_updated_at),
+      contentVersion: row.content_version ?? null,
       mappedTo: row.mapped_to,
       mappedId: row.mapped_id,
       supersededAt: row.superseded_at,
@@ -188,6 +218,7 @@ async function recordExternal(
     dataType: string;
     externalId: string;
     externalUpdatedAt: string | null;
+    contentVersion: string;
     recordType: NormalisedObservation['recordType'];
     observedAt: string | null;
     intervalStart: string | null;
@@ -207,6 +238,7 @@ async function recordExternal(
     data_type: record.dataType,
     external_id: record.externalId,
     external_updated_at: versionOf(record.externalUpdatedAt),
+    content_version: record.contentVersion,
     record_type: record.recordType,
     observed_at: record.observedAt,
     interval_start: record.intervalStart,
@@ -252,7 +284,9 @@ export async function writeObservation(
   }
 
   const thisVersion = versionOf(observation.externalUpdatedAt);
-  const sameVersion = existing.rows.find((row) => row.externalUpdatedAt === thisVersion);
+  const sameVersion = existing.rows.find(
+    (row) => isSameVersion(row, thisVersion, observation.contentVersion),
+  );
   if (sameVersion !== undefined && sameVersion.supersededAt === null) {
     return result({
       ...base, outcome: 'UNCHANGED', localDate: observation.timing.localDate,
@@ -320,6 +354,7 @@ export async function writeObservation(
     dataType: observation.dataType,
     externalId: observation.externalId,
     externalUpdatedAt: observation.externalUpdatedAt,
+    contentVersion: observation.contentVersion,
     recordType: observation.recordType,
     observedAt: observation.timing.observedAt,
     intervalStart: observation.timing.intervalStart,
@@ -385,7 +420,9 @@ export async function writeSleep(
   }
 
   const thisVersion = versionOf(sleep.externalUpdatedAt);
-  const sameVersion = existing.rows.find((row) => row.externalUpdatedAt === thisVersion);
+  const sameVersion = existing.rows.find(
+    (row) => isSameVersion(row, thisVersion, sleep.contentVersion),
+  );
   if (sameVersion !== undefined && sameVersion.supersededAt === null) {
     return result({ ...base, outcome: 'UNCHANGED', localDate: sleep.localDate });
   }
@@ -457,6 +494,7 @@ export async function writeSleep(
     dataType: 'sleep',
     externalId: sleep.externalId,
     externalUpdatedAt: sleep.externalUpdatedAt,
+    contentVersion: sleep.contentVersion,
     recordType: 'SESSION',
     observedAt: null,
     intervalStart: sleep.sleepStart,
@@ -509,7 +547,9 @@ export async function writeExerciseSession(
   }
 
   const thisVersion = versionOf(exercise.externalUpdatedAt);
-  const sameVersion = existing.rows.find((row) => row.externalUpdatedAt === thisVersion);
+  const sameVersion = existing.rows.find(
+    (row) => isSameVersion(row, thisVersion, exercise.contentVersion),
+  );
   if (sameVersion !== undefined && sameVersion.supersededAt === null) {
     return result({ ...base, outcome: 'UNCHANGED', localDate: exercise.localDate });
   }
@@ -607,6 +647,7 @@ export async function writeExerciseSession(
     dataType: 'exercise',
     externalId: exercise.externalId,
     externalUpdatedAt: exercise.externalUpdatedAt,
+    contentVersion: exercise.contentVersion,
     recordType: 'SESSION',
     observedAt: null,
     intervalStart: exercise.startTime,
@@ -649,6 +690,7 @@ export async function recordCorrelatedExercise(
     dataType: 'exercise',
     externalId: exercise.externalId,
     externalUpdatedAt: exercise.externalUpdatedAt,
+    contentVersion: exercise.contentVersion,
     recordType: 'SESSION',
     observedAt: null,
     intervalStart: exercise.startTime,
@@ -673,6 +715,7 @@ export async function recordUnmapped(
     dataType: observation.dataType,
     externalId: observation.externalId,
     externalUpdatedAt: observation.externalUpdatedAt,
+    contentVersion: observation.contentVersion,
     recordType: observation.recordType,
     observedAt: observation.timing.observedAt,
     intervalStart: observation.timing.intervalStart,

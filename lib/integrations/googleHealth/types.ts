@@ -16,9 +16,23 @@
  * and the cost of strictness is a measurement that never arrives.
  *
  * So: the envelope is validated (it is documented, and getting it wrong means
- * pagination breaks silently), the data point's identity is validated (without
- * `name` there is no idempotency), and the measurement itself is read by the
+ * pagination breaks silently), and the measurement itself is read by the
  * tolerant accessors below, each of which returns null rather than throwing.
+ *
+ * `name` IS OPTIONAL, AND THAT IS THE API'S RULE, NOT A CONCESSION. Google
+ * documents DataPoint.name as supported only for a subset of identifiable data
+ * types; for most types - the steps list response among them - a point arrives
+ * with a `dataSource` and its body and no `name` at all. Requiring it here was
+ * how the first real sync came to reject well-formed responses, so it is now
+ * read when present, preserved exactly, and absent otherwise. What replaces it
+ * as an identity is minted in identity.ts, from the fields that actually
+ * identify the observation.
+ *
+ * A POINT IS PARSED ON ITS OWN, NOT WITH THE PAGE. parseDataPoints validates
+ * each element separately, so one unreadable point costs one measurement rather
+ * than the thousand it shared a page with. That was the second half of the same
+ * bug: the failure was at the envelope, so a single bad element discarded the
+ * whole window and the sync then skipped the rest of the data type.
  *
  * ONE OBSERVED DISCREPANCY, WORTH NAMING. The workouts guide documents the
  * exercise summary field as `distanceMillimeters`. The actual response captured
@@ -41,8 +55,24 @@ const nullish = <T extends z.ZodTypeAny>(schema: T) =>
  * both normalised to null and neither can start an infinite loop.
  */
 export const dataPointSchema = z.looseObject({
-  /** users/{uid}/dataTypes/{type}/dataPoints/{id} - the stable external id. */
-  name: z.string().min(1),
+  /**
+   * users/{uid}/dataTypes/{type}/dataPoints/{id}, WHERE THE API SENDS ONE.
+   *
+   * Optional, because Google's documentation says it is: only a subset of
+   * identifiable data types carry a name, and for the majority the field "may
+   * be empty".
+   *
+   * EMPTY MEANS EMPTY, AND THAT INCLUDES "". The documentation's word is
+   * empty, not absent, so a zero-length string is a shape this has to accept -
+   * `.min(1)` would refuse the point outright, which is the very failure being
+   * fixed, one field further in. It is normalised to null alongside an absent
+   * field, because "" is not an identity anything can be keyed on: every
+   * nameless point of a type would collide on it.
+   *
+   * A name that IS present passes through untouched. It is the provider's own
+   * id and the only correct thing to do with it is preserve it.
+   */
+  name: z.string().nullish().transform((v) => (v ? v : null)),
   dataSource: nullish(z.looseObject({
     recordingMethod: nullish(z.string()),
     platform: nullish(z.string()),
@@ -53,13 +83,101 @@ export const dataPointSchema = z.looseObject({
     })),
   })),
 });
-export type GoogleDataPoint = z.infer<typeof dataPointSchema>;
 
+/**
+ * A data point that passed validation, KEPT EXACTLY AS IT ARRIVED.
+ *
+ * Not `z.infer` of the schema above, and the difference matters twice over.
+ * Parsing a loose object returns a NEW object with the schema's normalisations
+ * baked in - an absent `name` becomes an explicit `name: null`, an absent
+ * `device` becomes `device: null` - and if that were what travelled onward:
+ *
+ *   * external_observations.payload would hold this app's rendering of the
+ *     record rather than the provider's (§17 says the opposite: the payload is
+ *     what arrived, before anything interpreted it);
+ *   * and the content digest would be taken over that rendering, so adding one
+ *     nullish field to this schema would change every record's version and
+ *     re-import a year of history as corrections.
+ *
+ * So the schema is a GATE - it decides whether a point is readable and says
+ * precisely why when it is not - and the raw object is what passes through it.
+ * Reading it is the tolerant accessors' job, as it already was for every field
+ * below the identity.
+ */
+export type GoogleDataPoint = Record<string, unknown>;
+
+/**
+ * The envelope, with its points left unparsed.
+ *
+ * `z.unknown()` rather than the point schema, deliberately: the envelope's job
+ * is pagination, and a page whose points are individually questionable is still
+ * a page whose `nextPageToken` must be honoured. The points are validated one
+ * at a time by parseDataPoints below.
+ */
 export const listResponseSchema = z.looseObject({
-  dataPoints: z.array(dataPointSchema).default([]),
+  dataPoints: z.array(z.unknown()).default([]),
   nextPageToken: nullish(z.string()).transform((v) => (v ? v : null)),
 });
-export type GoogleListResponse = z.infer<typeof listResponseSchema>;
+
+/** A point that could not be read, and the shortest true reason why. */
+export interface RejectedDataPoint {
+  /** Its position in the page, so a diagnostic can point at something. */
+  index: number;
+  reason: string;
+}
+
+/** A page of points, after each has been validated on its own. */
+export interface GoogleDataPointPage {
+  dataPoints: GoogleDataPoint[];
+  nextPageToken: string | null;
+  rejected: RejectedDataPoint[];
+}
+
+/**
+ * One zod issue as a single line.
+ *
+ * The failing sync reported `parsed.error.message` - the serialised issue
+ * ARRAY, several hundred characters of JSON - once per data type, which is how
+ * one wrong assumption became a wall of identical text in Settings. A reason is
+ * a path and a sentence; the count belongs to the aggregator, not to the text.
+ */
+function issueLine(issue: z.core.$ZodIssue): string {
+  const path = issue.path.length > 0 ? issue.path.join('.') : 'the data point';
+  return `${path}: ${issue.message}`;
+}
+
+/**
+ * Validates a page's points one at a time.
+ *
+ * Returns everything that parsed and a short reason for everything that did
+ * not, so the caller can keep the good measurements AND say what it lost. A
+ * point is only rejected when it is not an object at all or its identity and
+ * source fields are the wrong SHAPE - an unrecognised extra field is kept, as
+ * the header explains, because the payload is stored verbatim either way.
+ */
+export function parseDataPoints(
+  raw: readonly unknown[],
+): { points: GoogleDataPoint[]; rejected: RejectedDataPoint[] } {
+  const points: GoogleDataPoint[] = [];
+  const rejected: RejectedDataPoint[] = [];
+
+  raw.forEach((element, index) => {
+    const parsed = dataPointSchema.safeParse(element);
+    if (parsed.success) {
+      // `element`, not `parsed.data`: see GoogleDataPoint above. What is stored
+      // and what is digested has to be what the provider actually sent.
+      points.push(element as Record<string, unknown>);
+      return;
+    }
+    const first = parsed.error.issues[0];
+    rejected.push({
+      index,
+      reason: first === undefined ? 'it could not be read' : issueLine(first),
+    });
+  });
+
+  return { points, rejected };
+}
 
 /**
  * The identity endpoint. Called once at connect time and cached forever - the
