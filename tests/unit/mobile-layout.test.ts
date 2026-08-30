@@ -127,3 +127,32 @@ describe('interactive controls are big enough to tap', () => {
     }
   });
 });
+
+/**
+ * Quick Add on the day view opens a real section of Quick Entry.
+ *
+ * The link, the page's validation and the form's sections are three places
+ * that have to agree on a string. They share one list so a renamed section
+ * cannot silently start opening nothing - this checks they still do.
+ */
+describe('Quick Add names sections that exist', () => {
+  it('builds its links from the shared group list', () => {
+    const day = readFileSync(join(ROOT, 'app/(app)/day/[date]/page.tsx'), 'utf8');
+    expect(day).toMatch(/QUICK_GROUPS/);
+    expect(day).toMatch(/\/quick\?date=\$\{date\}&open=/);
+  });
+
+  it('validates the incoming group against the same list', () => {
+    const page = readFileSync(join(ROOT, 'app/(app)/quick/page.tsx'), 'utf8');
+    expect(page).toMatch(/isQuickGroup/);
+  });
+
+  it('renders a section for every group the list names', () => {
+    const form = readFileSync(join(ROOT, 'components/quick/QuickEntryForm.tsx'), 'utf8');
+    for (const group of [
+      'Body', 'Nutrition', 'Activity and vitals', 'Sleep', 'Workout', 'Cardio',
+    ]) {
+      expect(form, `Quick Entry has no "${group}" section`).toContain(`title="${group}"`);
+    }
+  });
+});

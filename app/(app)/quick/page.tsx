@@ -11,6 +11,7 @@
  * same value imported end up in the same row of the same table.
  */
 import { QuickEntryForm } from '@/components/quick/QuickEntryForm';
+import { isQuickGroup } from '@/components/quick/groups';
 import { getProfile, getRecordedDates } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { todayForUser } from '@/app/actions/log';
@@ -24,7 +25,7 @@ export const dynamic = 'force-dynamic';
 export default async function QuickEntryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; open?: string }>;
 }) {
   const [profileRow, today, query, recorded] = await Promise.all([
     getProfile(), todayForUser(), searchParams, getRecordedDates(1),
@@ -35,6 +36,9 @@ export default async function QuickEntryPage({
   // form field that would then fail validation on submit.
   const startDate =
     query.date && isLocalDate(query.date) ? query.date : today;
+  // Quick Add on the day view names the group to open. Anything unrecognised
+  // is ignored rather than opening nothing or everything.
+  const startOpen = query.open && isQuickGroup(query.open) ? query.open : null;
 
   return (
     <div className="space-y-6">
@@ -52,6 +56,7 @@ export default async function QuickEntryPage({
         today={today}
         yesterday={addDays(today, -1)}
         initialDate={startDate}
+        initialOpen={startOpen}
         lastLoggedDate={recorded[0] ?? null}
         weightUnit={WEIGHT_UNIT_LABEL[profile.weightDisplayUnit]}
         lengthUnit={LENGTH_UNIT_LABEL[profile.lengthDisplayUnit]}

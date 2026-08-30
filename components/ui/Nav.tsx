@@ -10,6 +10,9 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
+  // Resolves to /day/<today> server-side: the date depends on the profile's
+  // timezone, so the browser's clock must not decide it (spec §40).
+  { href: '/today', label: 'Today' },
   { href: '/progress', label: 'Progress' },
   { href: '/training', label: 'Training' },
   { href: '/nutrition', label: 'Nutrition' },
@@ -45,7 +48,10 @@ export function Nav({ signOutAction }: { signOutAction: () => Promise<void> }) {
                      sm:mx-0 sm:flex-none sm:flex-wrap sm:gap-y-1 sm:overflow-visible sm:px-0"
         >
           {LINKS.map((link) => {
-            const active = pathname === link.href;
+            // /today forwards to /day/<date>, so it stays the current page
+            // once you are on one.
+            const active = pathname === link.href
+              || (link.href === '/today' && pathname.startsWith('/day/'));
             return (
               <Link
                 key={link.href}

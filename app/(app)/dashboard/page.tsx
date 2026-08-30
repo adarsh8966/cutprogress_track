@@ -142,6 +142,24 @@ export default async function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* The day view is where today's figures and the records behind them
+            live. The Dashboard answers three questions and stops (spec §50), so
+            it points at the cockpit rather than growing into one. */}
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link
+            href={`/day/${end}`}
+            className="inline-flex min-h-11 items-center rounded border border-line-strong px-4 text-sm text-ink transition-colors hover:border-accent"
+          >
+            Today
+          </Link>
+          <Link
+            href={`/quick?date=${end}`}
+            className="inline-flex min-h-11 items-center rounded border border-line px-4 text-sm text-ink-muted transition-colors hover:border-accent"
+          >
+            Quick add
+          </Link>
+        </div>
       </section>
 
       {/* --------------------------------------- 3. What should I do? */}
@@ -188,11 +206,7 @@ export default async function DashboardPage() {
           <Link href="/context" className="text-accent hover:underline">
             context pack
           </Link>{' '}
-          to hand the full picture to ChatGPT for the coaching call, or open{' '}
-          <Link href={`/day/${end}`} className="text-accent hover:underline">
-            today
-          </Link>{' '}
-          to see and correct the records behind these figures.
+          to hand the full picture to ChatGPT for the coaching call.
         </p>
       </Card>
 

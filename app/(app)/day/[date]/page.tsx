@@ -31,6 +31,7 @@ import { conflicts, corrections } from '@/lib/normalization/canonical';
 import { addDays, formatShortDate, isLocalDate } from '@/lib/normalization/dates';
 import { unitsOf } from '@/lib/normalization/units';
 import { todayForUser } from '@/app/actions/log';
+import { QUICK_GROUPS, QUICK_ADD_LABEL } from '@/components/quick/groups';
 import type { LocalDate } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -78,17 +79,28 @@ export default async function DayPage({
             <span className="ml-2 text-sm text-ink-faint">{date}</span>
           </h1>
           <nav className="ml-auto flex items-center gap-x-4 text-xs">
-            <Link href={`/day/${previous}`} className="text-ink-faint hover:text-accent">
+            <Link
+              href={`/day/${previous}`}
+              className="inline-flex min-h-9 items-center text-ink-faint hover:text-accent"
+            >
               ← {formatShortDate(previous)}
             </Link>
             {date < today && (
-              <Link href={`/day/${next}`} className="text-ink-faint hover:text-accent">
+              <Link
+                href={`/day/${next}`}
+                className="inline-flex min-h-9 items-center text-ink-faint hover:text-accent"
+              >
                 {formatShortDate(next)} →
               </Link>
             )}
-            <Link href={`/quick?date=${date}`} className="text-accent hover:underline">
-              Add to this day
-            </Link>
+            {date !== today && (
+              <Link
+                href="/today"
+                className="inline-flex min-h-9 items-center text-accent hover:underline"
+              >
+                Today
+              </Link>
+            )}
           </nav>
         </div>
         <p className="max-w-2xl text-sm leading-relaxed text-ink-muted">
@@ -97,6 +109,36 @@ export default async function DayPage({
           and it can be put back.
         </p>
       </header>
+
+      {/*
+        QUICK ADD. Every button opens the form that already knows how to record
+        that thing, on this date, with its section unfolded - rather than a
+        second set of inputs that would need its own validation, its own units
+        and its own rebuild. There is one write path per table and this does not
+        add another.
+      */}
+      <section className="rounded-lg border border-line bg-surface p-4 sm:p-5">
+        <h2 className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
+          Add to this day
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_GROUPS.map((group) => (
+            <Link
+              key={group}
+              href={`/quick?date=${date}&open=${encodeURIComponent(group)}`}
+              className="inline-flex min-h-11 items-center rounded border border-line px-3 text-sm text-ink-muted transition-colors hover:border-accent hover:text-ink"
+            >
+              {QUICK_ADD_LABEL[group]}
+            </Link>
+          ))}
+          <Link
+            href="/import"
+            className="inline-flex min-h-11 items-center rounded border border-line px-3 text-sm text-ink-muted transition-colors hover:border-accent hover:text-ink"
+          >
+            Import a paste
+          </Link>
+        </div>
+      </section>
 
       {detail.incomplete && (
         <p className="rounded border border-warn/40 bg-warn/5 px-3 py-2 text-sm text-warn">

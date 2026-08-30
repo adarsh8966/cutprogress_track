@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { quickEntry, type QuickEntryResult } from '@/app/actions/quick';
 import { NumberField, SelectField, TextField } from '@/components/ui/Form';
+import { DEFAULT_OPEN } from '@/components/quick/groups';
 
 const SESSION_TYPES = [
   { value: '', label: 'no workout' },
@@ -36,22 +37,6 @@ const CARDIO_TYPES = [
     label: value.replaceAll('_', ' ').toLowerCase(),
   })),
 ];
-
-/**
- * Which groups start open.
- *
- * Weight and food are what gets logged most nights, so those two are open and
- * the rest are one tap away. Every group stays reachable; none is behind a
- * menu or another page.
- */
-const DEFAULT_OPEN: Record<string, boolean> = {
-  Body: true,
-  Nutrition: true,
-  'Activity and vitals': false,
-  Sleep: false,
-  Workout: false,
-  Cardio: false,
-};
 
 const STORAGE_KEY = 'cut-os:quick-entry:open';
 
@@ -108,6 +93,7 @@ export function QuickEntryForm({
   today,
   yesterday,
   initialDate,
+  initialOpen,
   lastLoggedDate,
   weightUnit,
   lengthUnit,
@@ -122,6 +108,11 @@ export function QuickEntryForm({
    * what they say, so this is separate from `today` rather than overwriting it.
    */
   initialDate: string;
+  /**
+   * A group to open on arrival, from Quick Add on the day view. Named rather
+   * than indexed so a reordered form cannot open the wrong section.
+   */
+  initialOpen: string | null;
   /** The most recent day with anything recorded, when there is one. */
   lastLoggedDate: string | null;
   weightUnit: string;
@@ -131,7 +122,9 @@ export function QuickEntryForm({
   const [result, setResult] = useState<QuickEntryResult | null>(null);
   const [pending, setPending] = useState(false);
   const [date, setDate] = useState(initialDate);
-  const [open, setOpen] = useState<Record<string, boolean>>(DEFAULT_OPEN);
+  const [open, setOpen] = useState<Record<string, boolean>>(
+    initialOpen === null ? DEFAULT_OPEN : { ...DEFAULT_OPEN, [initialOpen]: true },
+  );
   const [filled, setFilled] = useState<Record<string, boolean>>({});
   const form = useRef<HTMLFormElement>(null);
   const errors = result?.errors ?? {};
@@ -160,11 +153,17 @@ export function QuickEntryForm({
     try {
       const stored = JSON.parse(saved) as Record<string, boolean>;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount read, see above
-      setOpen({ ...DEFAULT_OPEN, ...stored });
+      setOpen({
+        ...DEFAULT_OPEN,
+        ...stored,
+        // Arriving from Quick Add asks for a specific group. That beats what
+        // was remembered: it is the reason this page was opened.
+        ...(initialOpen === null ? {} : { [initialOpen]: true }),
+      });
     } catch {
       // A corrupt value is not worth acting on, and not worth an error either.
     }
-  }, []);
+  }, [initialOpen]);
 
   function toggle(title: string) {
     setOpen((previous) => {
