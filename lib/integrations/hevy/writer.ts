@@ -9,12 +9,11 @@ import 'server-only';
  * counted by rebuildDailyMetrics and analysed by lib/analytics/training exactly
  * as any other. There is no parallel model and no second canonical layer.
  *
- * THE CLIENT IS ALWAYS INJECTED. This module never constructs one, and in
- * particular never reaches for the service-role client: it is handed whichever
- * client the caller is entitled to use - the signed-in user's under RLS from a
- * server action, or the scheduled one - and every statement is scoped by an
- * explicit user_id besides. The second belt matters because the scheduled
- * caller has no RLS behind it.
+ * THE CLIENT IS ALWAYS INJECTED. This module never constructs one: it is handed
+ * the client its caller is entitled to use - the signed-in user's, under RLS,
+ * from the Sync action - and every statement is scoped by an explicit user_id
+ * besides. RLS is the boundary; naming the user in the query as well costs
+ * nothing and makes each statement readable on its own.
  *
  * IDEMPOTENCY IS THE DATABASE'S JOB, IN TWO PLACES:
  *

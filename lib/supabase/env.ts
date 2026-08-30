@@ -5,10 +5,12 @@
  * succeeds on a machine with no credentials and a missing variable surfaces as
  * a clear message rather than a stack trace during static generation.
  *
- * THE SERVICE ROLE KEY IS NEVER READ HERE. It is confined to
- * lib/supabase/admin.ts, which is server-only, and it must never appear in a
- * NEXT_PUBLIC_ variable - anything so prefixed is inlined into the browser
- * bundle by Next.
+ * THE SERVICE ROLE KEY IS NOT READ ANYWHERE IN THIS APPLICATION. Every path
+ * runs as the signed-in user with the anon key, under the row-level-security
+ * policies, which is what makes those policies the actual boundary rather than
+ * a formality. tests/unit/service-role-absence.test.ts holds that. If one is
+ * ever needed it must never appear in a NEXT_PUBLIC_ variable - anything so
+ * prefixed is inlined into the browser bundle by Next.
  */
 
 export interface PublicSupabaseEnv {

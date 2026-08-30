@@ -68,8 +68,9 @@ above.
 `sync_runs` records one row per synchronisation attempt — status, times, counts,
 warnings, error and cursor. Never deleted (the privilege is withheld outright, a
 step stronger than the observation tables' missing policy), and a partial unique
-index refuses a second `RUNNING` row per provider, so the Sync button pressed
-mid-schedule is turned away by the database rather than racing it.
+index refuses a second `RUNNING` row per provider, so a second press — another
+tab, an impatient double click — is turned away by the database rather than
+racing the first.
 
 ## Canonical
 

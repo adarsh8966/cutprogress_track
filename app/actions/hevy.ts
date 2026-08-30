@@ -8,12 +8,16 @@
  * different questions and the Import page must be able to answer them
  * separately. `syncHevy` runs the import.
  *
- * THE ORDINARY AUTHENTICATED CLIENT, DELIBERATELY. This runs as the signed-in
- * user through createActionClient(), so every read and write goes through that
- * user's own RLS policies - the same boundary every other action in this app
- * relies on. It does not import lib/supabase/admin.ts and must not: the
- * service-role key belongs to the scheduled path alone, behind one door, and a
- * test enforces that.
+ * THE ORDINARY AUTHENTICATED CLIENT, AND THE ONLY ONE. This runs as the
+ * signed-in user through createActionClient(), so every read and write goes
+ * through that user's own RLS policies - the same boundary every other action in
+ * this app relies on. There is no privileged client anywhere in the application
+ * to reach for instead, which tests/unit/service-role-absence.test.ts holds.
+ *
+ * SYNCING IS SOMETHING THE USER DOES. There is no schedule: the button on
+ * /import is the whole trigger surface. That keeps the sync inside the session
+ * it was asked for, which is why no service-role key is needed - a scheduled
+ * request would arrive with no session and nothing for RLS to key on.
  *
  * The Hevy key is read here and never leaves: what comes back to the browser is
  * a SyncSummary of counts, timestamps and warnings.

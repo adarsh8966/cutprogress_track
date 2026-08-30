@@ -101,9 +101,9 @@ Three properties are structural rather than conventional:
   from a payload is a value with nowhere to go. A source-level test also fails
   the build if any file in the directory names a health table.
 - **Client-agnostic.** `sync.ts` and `writer.ts` construct no Supabase client;
-  they take whichever one the caller is entitled to use and filter by an
-  explicit `user_id` besides. That is what lets one engine serve both the
-  RLS-backed Sync button and the scheduled route.
+  they take the one their caller is entitled to use and filter by an explicit
+  `user_id` besides. Today the only caller is the Sync button, which runs as the
+  signed-in user under RLS.
 
 ## Auth and RLS
 
@@ -129,25 +129,17 @@ allowed into a message the user reads. Left unseparated it renders the JSON
 parser's own complaint — `Unexpected token '<', "<!DOCTYPE "...` — as the
 sign-up verdict whenever the endpoint answers with an HTML document.
 
-The service-role key is used in exactly one place, and only when the optional
-scheduled sync is configured: `app/api/hevy/sync/route.ts`. A cron request
-carries no cookie session, so there is no user for RLS to key on — the route
-authenticates itself with `CRON_SECRET` (compared in constant time), names the
-account with `CUT_OS_OWNER_USER_ID`, and every query downstream filters by that
-id explicitly, because RLS is not there to catch a mistake on that path.
+The service-role key is not used anywhere in the application. It has a
+commented-out slot in `.env.example` for a future Edge Function, with a warning
+attached.
 
-`lib/supabase/admin.ts` is a **single-caller module**: exactly one file may
-import it, and `tests/unit/admin-client-containment.test.ts` fails the build if
-a second one does. With the variables unset the route answers 503 and changes
-nothing, and the Sync button works entirely under RLS without touching it.
-
-The schedule is **once a day** (09:00 UTC in `vercel.json`), which is what
-Vercel's free Hobby plan allows. Cadence is a preference rather than a
-correctness property: the sync is incremental and idempotent, so a daily run
-misses nothing a later one cannot pick up, and the Sync button covers
-immediacy. `tests/unit/cron-schedule.test.ts` holds the schedule to at most
-daily — the build refuses an over-frequent one rather than the deployment being
-rejected after the fact, which is how an hourly schedule shipped once already.
+That is a consequence of syncing being a button rather than a schedule. A cron
+request carries no cookie session, so it has no user for RLS to key on, and the
+only way to give one write access is a key that bypasses every policy. A button
+runs inside the user's own session and needs nothing of the sort.
+`tests/unit/service-role-absence.test.ts` holds the line: no file reads that
+key, and only `lib/supabase/client.ts`, `lib/supabase/server.ts`, `middleware.ts`
+and `app/auth/confirm/route.ts` may construct a Supabase client at all.
 
 ## Environment handling
 

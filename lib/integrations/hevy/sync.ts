@@ -4,12 +4,13 @@ import 'server-only';
  * One synchronisation run: Hevy's change feed -> CUT OS's write path.
  *
  * CLIENT-AGNOSTIC AND USER-SCOPED. This function constructs no Supabase client.
- * It takes whichever one the caller is entitled to use - the signed-in user's,
- * under RLS, from the Sync button; the scheduled one from the cron route - and
- * a userId that every read and write is filtered by regardless. RLS is the real
- * boundary when there is one; the explicit filter is what holds when there is
- * not. Neither this file nor writer.ts may import lib/supabase/admin.ts, and a
- * test enforces that.
+ * It takes the one its caller is entitled to use - today only the Sync button's,
+ * which is the signed-in user's and runs under RLS - plus a userId that every
+ * read and write is filtered by regardless. RLS is the boundary; the explicit
+ * filter is a second belt, free to keep and the half that would be missing if a
+ * caller without a session ever returned. This file constructs no client, so it
+ * cannot be the route by which a privileged one arrives (asserted in
+ * tests/unit/service-role-absence.test.ts).
  *
  * WHY THE EVENTS FEED AND NOT /v1/workouts. Pressing Sync must not re-download
  * a training history to discover that nothing changed. The feed answers "what
@@ -153,8 +154,9 @@ export async function runHevySync(
   const now = options.now ?? (() => new Date());
 
   // The profile's timezone decides which calendar day a workout lands on (§40).
-  // Read through the caller's client rather than getProfile(), which needs a
-  // cookie session the scheduled caller does not have.
+  // Read through the caller's client rather than getProfile(), which reaches for
+  // a cookie session of its own - this function is handed its client and should
+  // not go looking for a different one.
   const profile = await supabase
     .from('profiles')
     .select('timezone')
@@ -181,8 +183,8 @@ export async function runHevySync(
   const cursorBefore = lastClean.data?.[0]?.cursor_after ?? null;
 
   // Opening the run is also the lock: a partial unique index refuses a second
-  // RUNNING row, so the button pressed mid-cron is turned away by the database
-  // rather than racing it.
+  // RUNNING row, so a second press - another tab, an impatient double click -
+  // is turned away by the database rather than racing the first.
   const opened = await supabase
     .from('sync_runs')
     .insert({
