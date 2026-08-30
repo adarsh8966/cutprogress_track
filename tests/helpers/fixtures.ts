@@ -123,6 +123,15 @@ export function fixtureSets(): LoggedSet[] {
         rir: 2,
         rpe: 8,
         warmup: false,
+        setNumber,
+        // Logged by hand in the fixture's world: no exercise block, no source
+        // vocabulary, no per-set distance or duration.
+        exerciseIndex: null,
+        exerciseNotes: null,
+        setType: null,
+        supersetId: null,
+        distanceKm: null,
+        durationSeconds: null,
       });
     }
   });
@@ -153,6 +162,10 @@ export function fixtureSessions(): TrainingSession[] {
         id: summaryOnly ? `imported-${date}` : `session-${date}`,
         date,
         sessionType: types[i % types.length]!,
+        // The fixture predates external sources; every session in it was
+        // recorded here, with no name of its own.
+        title: null,
+        externalSource: null,
         durationMinutes: 55 + Math.round(random() * 12),
         averageHeartRate: 132 + Math.round(random() * 14),
         maxHeartRate: 165 + Math.round(random() * 10),

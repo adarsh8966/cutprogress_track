@@ -108,9 +108,17 @@ describe('every canonical field is read by something', () => {
     // rows.ts is the one place every canonical column becomes a domain field,
     // so it is the authority on what the map has to cover.
     const mapper = readFileSync(`${ROOT}lib/data/rows.ts`, 'utf8');
-    // Only rowToDailyMetrics: rowToProfile lives in the same file and maps a
-    // different shape, whose fields are not canonical day metrics.
-    const body = mapper.slice(mapper.indexOf('export function rowToDailyMetrics'));
+    // Only rowToDailyMetrics: the other mappers in this file map different
+    // shapes - a profile, a training session, an exercise - whose fields are
+    // not canonical day metrics. The slice is bounded at the NEXT top-level
+    // export rather than at the end of the file, which is what it used to be:
+    // that read every mapper added below it as though its fields were columns
+    // of daily_metrics, so adding one made this test demand readers for
+    // `durationMinutes` and `averageHeartRate`.
+    const from = mapper.indexOf('export function rowToDailyMetrics');
+    const rest = mapper.slice(from);
+    const next = rest.indexOf('\nexport ', 1);
+    const body = next === -1 ? rest : rest.slice(0, next);
     const mapped = [...body.matchAll(/^\s{4}(\w+): toNumber\(/gm)].map((m) => m[1]!);
 
     expect(mapped.length).toBeGreaterThan(0);

@@ -21,11 +21,28 @@ export interface LoggedSet {
   exerciseId: string;
   exerciseName: string;
   primaryMuscleGroup: string;
+  setNumber: number;
   weightKg: number | null;
   reps: number | null;
   rir: number | null;
   rpe: number | null;
   warmup: boolean;
+  /**
+   * Which exercise block of the workout this set belongs to, as the source
+   * ordered it. NULL when the source did not say - a set logged by hand has no
+   * position beyond the order it was entered in.
+   */
+  exerciseIndex: number | null;
+  /** The note on the EXERCISE, repeated on each of its sets. */
+  exerciseNotes: string | null;
+  /**
+   * The source's own word for this set, verbatim. Nothing but the exact string
+   * "warmup" is read into meaning; see the mapper.
+   */
+  setType: string | null;
+  supersetId: number | null;
+  distanceKm: number | null;
+  durationSeconds: number | null;
 }
 
 /**
@@ -45,6 +62,14 @@ export interface TrainingSession {
   id: string;
   date: LocalDate;
   sessionType: string;
+  /**
+   * The name the source gave this workout ("Push Day"). NULL when it had none.
+   * sessionType is still the closed vocabulary analytics group by; this is the
+   * label, and a label that maps to nothing is kept whole rather than lost.
+   */
+  title: string | null;
+  /** The system this session came from, e.g. HEVY. NULL when recorded here. */
+  externalSource: string | null;
   durationMinutes: number | null;
   averageHeartRate: number | null;
   maxHeartRate: number | null;

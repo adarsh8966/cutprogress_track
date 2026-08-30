@@ -12,12 +12,14 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getProfile, getWorkoutSession, getSetsForSession } from '@/lib/data/queries';
+import {
+  getProfile, getWorkoutSession, getSetsForSession, getExerciseLibrary,
+} from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, Figure, formatNumber } from '@/components/ui/primitives';
 import { SessionEditor } from '@/components/training/SessionEditor';
 import { WorkoutLogger } from '@/components/training/WorkoutLogger';
-import { apartmentGymExercises } from '@/lib/health/catalog';
+
 import { displayWeight, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
 import { formatShortDate } from '@/lib/normalization/dates';
 import { todayForUser } from '@/app/actions/log';
@@ -43,12 +45,11 @@ export default async function SessionPage({
   const session = await getWorkoutSession(sessionId);
   if (!session) notFound();
 
-  const [sets, today, loaded] = await Promise.all([
-    getSetsForSession(sessionId), todayForUser(), getProfile(),
+  const [sets, today, loaded, exercises] = await Promise.all([
+    getSetsForSession(sessionId), todayForUser(), getProfile(), getExerciseLibrary(),
   ]);
   const profile = loaded ?? DEFAULT_PROFILE;
   const weightUnit = WEIGHT_UNIT_LABEL[profile.weightDisplayUnit];
-  const exercises = apartmentGymExercises();
   // set_number is unique per (session, exercise), so continuing past the
   // session's existing count never collides with a set already logged.
   const nextSetNumber = sets.length + 1;

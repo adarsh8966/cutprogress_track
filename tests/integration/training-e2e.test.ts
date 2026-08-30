@@ -85,6 +85,8 @@ function toDomain(rows: SessionRow[]): TrainingSession[] {
     id: row.id,
     date: row.local_date,
     sessionType: row.session_type,
+    title: null,
+    externalSource: null,
     durationMinutes: num(row.duration_minutes),
     averageHeartRate: num(row.average_heart_rate),
     maxHeartRate: num(row.max_heart_rate),

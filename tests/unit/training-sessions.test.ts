@@ -22,6 +22,8 @@ function session(overrides: Partial<TrainingSession> = {}): TrainingSession {
     id: 'session-1',
     date: '2026-08-28',
     sessionType: 'PULL',
+    title: null,
+    externalSource: null,
     durationMinutes: 58,
     averageHeartRate: 142,
     maxHeartRate: 171,
@@ -46,6 +48,13 @@ function set(overrides: Partial<LoggedSet> = {}): LoggedSet {
     rir: 2,
     rpe: 8,
     warmup: false,
+    setNumber: 1,
+    exerciseIndex: null,
+    exerciseNotes: null,
+    setType: null,
+    supersetId: null,
+    distanceKm: null,
+    durationSeconds: null,
     ...overrides,
   };
 }
