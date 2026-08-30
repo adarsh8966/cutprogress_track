@@ -38,8 +38,15 @@ export function SessionHistory({
                   {formatShortDate(session.date)}
                 </span>
                 <span className="text-sm text-ink">
-                  {session.sessionType.replaceAll('_', ' ').toLowerCase()}
+                  {/* The name the source gave it, when it gave one. A title
+                      that mapped to OTHER is still worth reading. */}
+                  {session.title ?? session.sessionType.replaceAll('_', ' ').toLowerCase()}
                 </span>
+                {session.title !== null && (
+                  <span className="text-[11px] uppercase tracking-[0.12em] text-ink-faint">
+                    {session.sessionType.replaceAll('_', ' ').toLowerCase()}
+                  </span>
+                )}
                 <span className="tabular ml-auto text-sm">
                   {session.durationMinutes === null ? (
                     <span className="text-ink-faint">duration not logged</span>
@@ -65,6 +72,9 @@ export function SessionHistory({
                     {formatNumber(session.calories, 0)} kcal
                   </span>
                 )}
+                {/* Provenance, where the user is looking at the session -
+                    spec §15: an imported record says so. */}
+                {session.externalSource === 'HEVY' && <span>from Hevy</span>}
                 <span className="ml-auto">
                   {sets === 0 ? 'no exercises logged' : `${sets} set${sets === 1 ? '' : 's'}`}
                 </span>

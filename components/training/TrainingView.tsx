@@ -31,6 +31,7 @@ import type {
   TrainingSession, SessionSummary, TrainingSummary,
   ExercisePerformance, ProgressionResult,
 } from '@/lib/analytics/training';
+import type { ExerciseRecords, TrainingConsistency } from '@/lib/analytics/prs';
 
 const PROGRESSION_STATUS: Record<string, Status> = {
   WEIGHT_INCREASED: 'good',
@@ -58,6 +59,8 @@ export function TrainingView({
   summary,
   setCountBySession,
   rows,
+  records,
+  consistency,
   today,
   exercises,
   weightUnit,
@@ -67,6 +70,8 @@ export function TrainingView({
   summary: Derived<TrainingSummary>;
   setCountBySession: Map<string, number>;
   rows: ExerciseRow[];
+  records: Derived<ExerciseRecords[]>;
+  consistency: Derived<TrainingConsistency>;
   today: string;
   exercises: Exercise[];
   /** The user's display unit. Loads are stored in kg and read in this. */
@@ -195,14 +200,28 @@ export function TrainingView({
               size="sm"
             />
           </Card>
-          <Card title="Average RIR">
+          {/*
+            RPE and RIR are two ways of saying the same thing and different
+            sources record different ones - Hevy records RPE, hand-logging here
+            records RIR. Showing whichever exists beats showing an empty card
+            for the one that does not; the label says which is on screen, so
+            the two are never silently conflated.
+          */}
+          <Card title={summary.value?.averageRpe == null ? 'Average RIR' : 'Average RPE'}>
             <Figure
               value={
-                summary.value?.averageRir == null
-                  ? null
-                  : formatNumber(summary.value.averageRir, 1)
+                summary.value?.averageRpe != null
+                  ? formatNumber(summary.value.averageRpe, 1)
+                  : summary.value?.averageRir == null
+                    ? null
+                    : formatNumber(summary.value.averageRir, 1)
               }
               size="sm"
+              sub={
+                summary.value?.averageRpe != null && summary.value?.averageRir != null
+                  ? `RIR ${formatNumber(summary.value.averageRir, 1)}`
+                  : undefined
+              }
             />
             <Evidence derived={summary} />
           </Card>
@@ -325,6 +344,97 @@ export function TrainingView({
           )}
         </Card>
       </section>
+
+      {records.value !== null && records.value.length > 0 && (
+        <Card title="Personal records">
+          <p className="mb-3 text-[11px] leading-relaxed text-ink-faint">
+            Derived from your own logged sets — Hevy publishes no personal-record
+            data, so every figure here can show its working. A record keeps the
+            date it was first reached; matching it again does not move it.
+          </p>
+          <ul className="divide-y divide-line/60">
+            {records.value.slice(0, 12).map((record) => (
+              <li
+                key={record.exerciseId}
+                className="py-3 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
+              >
+                <span className="text-sm text-ink">
+                  {record.exerciseName}
+                  {record.setOnLastSession && (
+                    <span className="ml-2 text-[11px] text-good">new</span>
+                  )}
+                </span>
+                <span className="mt-1 flex flex-wrap items-baseline gap-x-4 text-sm sm:mt-0 sm:contents">
+                  <span className="tabular">
+                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Heaviest</span>
+                    {record.heaviest === null
+                      ? '—'
+                      : `${formatNumber(asWeight(record.heaviest.value), 0)} ${weightLabel}`}
+                  </span>
+                  <span className="tabular">
+                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Most reps</span>
+                    {record.mostReps?.value ?? '—'}
+                  </span>
+                  <span className="tabular">
+                    <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Best e1RM</span>
+                    {record.bestEstimated1rm === null
+                      ? '—'
+                      : `${formatNumber(asWeight(record.bestEstimated1rm.value), 0)} ${weightLabel}`}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <Evidence derived={records} />
+        </Card>
+      )}
+
+      {consistency.value !== null && (
+        <Card title="Training consistency">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Figure
+              value={
+                consistency.value.sessionsPerWeek === null
+                  ? null
+                  : formatNumber(consistency.value.sessionsPerWeek, 1)
+              }
+              unit="/week"
+              size="sm"
+              sub="sessions"
+            />
+            <Figure
+              value={
+                consistency.value.averageSessionMinutes === null
+                  ? null
+                  : formatNumber(consistency.value.averageSessionMinutes, 0)
+              }
+              unit="min"
+              size="sm"
+              sub="average session"
+            />
+            <Figure
+              value={
+                consistency.value.averageRpe === null
+                  ? null
+                  : formatNumber(consistency.value.averageRpe, 1)
+              }
+              size="sm"
+              sub="average RPE"
+            />
+          </div>
+          <HorizontalBars
+            rows={consistency.value.weeks.map((week) => ({
+              label: week.weekStart,
+              value: week.sessions,
+              sub: week.minutes === null
+                ? 'no duration logged'
+                : formatDuration(week.minutes),
+            }))}
+            unit="sessions"
+          />
+          <Evidence derived={consistency} />
+        </Card>
+      )}
 
       <Card title="Log a workout">
         <WorkoutLogger today={today} exercises={exercises} weightUnit={weightLabel} />

@@ -23,11 +23,13 @@ import { WorkoutLogger } from '@/components/training/WorkoutLogger';
 import { displayWeight, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
 import { formatShortDate } from '@/lib/normalization/dates';
 import { todayForUser } from '@/app/actions/log';
+import { groupByExercise } from '@/lib/analytics/training';
 
 export const dynamic = 'force-dynamic';
 
 const SOURCE_LABEL: Record<string, string> = {
   MANUAL: 'entered by hand',
+  HEVY: 'imported from Hevy',
   IMPORT_TEXT: 'imported from a pasted summary',
   HEALTH_CONNECT: 'Health Connect',
   GOOGLE_HEALTH: 'Google Health',
@@ -61,15 +63,39 @@ export default async function SessionPage({
           ← Training
         </Link>
         <h1 className="text-xl font-light">
-          {session.sessionType.replaceAll('_', ' ').toLowerCase()} ·{' '}
+          {/*
+            The name the source gave the workout, when it gave one. sessionType
+            is the closed vocabulary the analytics group by and it is still
+            shown - but "Push Day" is what the user called it, and a title that
+            mapped to OTHER would otherwise be invisible here.
+          */}
+          {session.title ?? session.sessionType.replaceAll('_', ' ').toLowerCase()} ·{' '}
           <span className="text-ink-muted">{formatShortDate(session.date)}</span>
         </h1>
+        {session.title !== null && (
+          <p className="text-xs uppercase tracking-[0.12em] text-ink-faint">
+            {session.sessionType.replaceAll('_', ' ').toLowerCase()}
+          </p>
+        )}
         <p className="text-sm text-ink-muted">
           Recorded {SOURCE_LABEL[session.source] ?? session.source.toLowerCase()}
           {session.importId ? ' — the original paste is kept on Import.' : '.'}
           {sets.length === 0 && ' No exercises or sets are logged for this session.'}
         </p>
       </header>
+
+      {/*
+        THE WORKOUT NOTE. The column has existed since 0004 and the editor below
+        has always been able to write it, but no page ever showed it - so a note
+        written in the gym was stored, confirmed and invisible.
+      */}
+      {session.notes && (
+        <Card title="Workout notes">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+            {session.notes}
+          </p>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card title="Duration">
@@ -121,49 +147,85 @@ export default async function SessionPage({
             attach to this session rather than creating a second one.
           </p>
         ) : (
-          <div>
-            {/* Four columns in a scroller was unreadable at 320px on the page
-                most likely to be open mid-session. Below sm each set is a row
-                of labelled figures; from sm up it is the same grid as before. */}
-            <div className="hidden border-b border-line pb-2 text-[11px] uppercase tracking-[0.12em] text-ink-faint sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-x-4">
-              <span>Exercise</span>
-              <span>Load</span>
-              <span>Reps</span>
-              <span>RIR</span>
-            </div>
-            <ul className="divide-y divide-line/60">
-              {sets.map((set, i) => (
-                <li
-                  key={`${set.exerciseId}-${i}`}
-                  className="py-2.5 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
-                >
-                  <span className="text-sm text-ink">
-                    {set.exerciseName}
-                    {set.warmup && (
-                      <span className="ml-2 text-[11px] text-ink-faint">warm-up</span>
-                    )}
+          <div className="space-y-6">
+            {/*
+              Grouped by exercise, in the order the workout was performed -
+              not a flat list of sets repeating the exercise name, which had
+              nowhere to put the note that belongs to the exercise rather than
+              to any one set, and no room for the RPE the source records.
+            */}
+            {groupByExercise(sets).map((block) => (
+              <section key={block.key}>
+                <header className="flex flex-wrap items-baseline gap-x-3">
+                  <h3 className="text-sm text-ink">{block.exerciseName}</h3>
+                  <span className="text-[11px] text-ink-faint">
+                    {block.sets.filter((s) => !s.warmup).length} working set
+                    {block.sets.filter((s) => !s.warmup).length === 1 ? '' : 's'}
                   </span>
-                  <span className="mt-1 flex items-baseline gap-4 text-sm sm:mt-0 sm:contents">
-                    <span className="tabular">
-                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Load</span>
-                      {set.weightKg === null
-                        ? '—'
-                        : `${formatNumber(
-                          displayWeight(set.weightKg, profile.weightDisplayUnit), 0,
-                        )} ${weightUnit}`}
-                    </span>
-                    <span className="tabular">
-                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Reps</span>
-                      {set.reps ?? '—'}
-                    </span>
-                    <span className="tabular">
-                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">RIR</span>
-                      {set.rir ?? '—'}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+                </header>
+
+                {block.notes && (
+                  <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">
+                    {block.notes}
+                  </p>
+                )}
+
+                <div className="mt-2 hidden border-b border-line pb-2 text-[11px] uppercase tracking-[0.12em] text-ink-faint sm:grid sm:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-x-4">
+                  <span>Set</span>
+                  <span>Load</span>
+                  <span>Reps</span>
+                  <span>RPE</span>
+                  <span>RIR</span>
+                </div>
+
+                <ul className="divide-y divide-line/60">
+                  {block.sets.map((set) => (
+                    <li
+                      key={`${set.exerciseId}-${set.setNumber}`}
+                      className="py-2.5 sm:grid sm:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
+                    >
+                      <span className="tabular text-sm text-ink-muted">
+                        {set.setNumber}
+                        {set.warmup && (
+                          <span className="ml-2 text-[11px] text-ink-faint">warm-up</span>
+                        )}
+                        {/*
+                          A set type the app does not interpret is still shown.
+                          Hevy's set-type vocabulary is not published, so only
+                          "warmup" is acted on and anything else is displayed
+                          exactly as it was recorded rather than hidden.
+                        */}
+                        {set.setType && !set.warmup && set.setType !== 'normal' && (
+                          <span className="ml-2 text-[11px] text-ink-faint">{set.setType}</span>
+                        )}
+                      </span>
+                      <span className="mt-1 flex items-baseline gap-4 text-sm sm:mt-0 sm:contents">
+                        <span className="tabular">
+                          <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Load</span>
+                          {set.weightKg === null
+                            ? '—'
+                            : `${formatNumber(
+                              displayWeight(set.weightKg, profile.weightDisplayUnit), 0,
+                            )} ${weightUnit}`}
+                        </span>
+                        <span className="tabular">
+                          <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Reps</span>
+                          {set.reps ?? '—'}
+                        </span>
+                        <span className="tabular">
+                          <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">RPE</span>
+                          {set.rpe ?? '—'}
+                        </span>
+                        <span className="tabular">
+                          <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">RIR</span>
+                          {set.rir ?? '—'}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           </div>
         )}
       </Card>

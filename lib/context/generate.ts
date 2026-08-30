@@ -32,6 +32,7 @@ import {
   summariseTraining, summariseSessions,
   type LoggedSet, type TrainingSession,
 } from '@/lib/analytics/training';
+import { personalRecords, trainingConsistency } from '@/lib/analytics/prs';
 import { generateRecommendations } from '@/lib/analytics/recommendations';
 import {
   displayWeight, displayLength, displayDistance, unitsOf, unitLabels,
@@ -50,7 +51,11 @@ import { latestReading } from '@/lib/analytics/latest';
 // columns, not only as 30-day averages. Under the coverage gate those averages
 // decline to compute on a sparse month, which meant a recovery metric could be
 // recorded every day for a week and reach ChatGPT as nothing at all.
-export const CONTEXT_VERSION = '1.2';
+// 1.3 adds week-by-week training consistency and personal records. Both became
+// worth reporting once set-level training arrived from an external source: a
+// pack whose training section was mostly "no exercise detail" could describe
+// the habit but not the progress, which is the half a coach acts on.
+export const CONTEXT_VERSION = '1.3';
 
 /** Spec §31's compression windows. */
 export const DETAIL_DAYS = 14;
@@ -181,6 +186,11 @@ export function generateContextPack(input: ContextInput): ContextPack {
   const tdee = estimateTdee(profile, weight, calories, steps, end, 28);
   const forecast = forecastTargetDate(weight, profile.targetWeightKg, end, 28);
   const training = summariseTraining(input.sets);
+  // Records and week-by-week consistency. Both are derived from the same sets
+  // the block above summarises - no source publishes personal-record data, so
+  // the pack states what it computed and from how much (lib/analytics/prs.ts).
+  const records = personalRecords(input.sets);
+  const consistency = trainingConsistency(input.sessions, input.sets, end, 12);
 
   const currentWeight = latestPresent(weight);
   const currentWaist = latestPresent(waist);
@@ -507,6 +517,49 @@ export function generateContextPack(input: ContextInput): ContextPack {
     );
   } else {
     parts.push('- No training sets logged in this period.');
+  }
+
+  // Week by week, so a coach can see the SHAPE of the training rather than one
+  // averaged figure. Empty weeks are included and counted: three good weeks and
+  // a missed one is three sessions a week, not four.
+  if (consistency.value) {
+    parts.push('');
+    parts.push(
+      [
+        line('Sessions per week (12 weeks)', consistency.value.sessionsPerWeek),
+        line('Average session length', consistency.value.averageSessionMinutes, 'min'),
+        line('Average RPE (12 weeks)', consistency.value.averageRpe),
+        line('Weeks with no session', `${consistency.value.emptyWeeks} of 12`),
+      ].join('\n'),
+    );
+  }
+
+  // Personal records. Every one carries the date it was FIRST reached, because
+  // "when did this last move?" is the question progression actually turns on,
+  // and a record that silently re-dates itself on every match cannot answer it.
+  if (records.value && records.value.length > 0) {
+    parts.push('');
+    parts.push('Personal records (from logged working sets):');
+    parts.push(
+      table(
+        ['Exercise', `Heaviest (${unit.weight})`, 'On', 'Most reps', `Best e1RM (${unit.weight})`],
+        records.value.slice(0, 15).map((record) => [
+          record.exerciseName,
+          record.heaviest === null
+            ? 'not logged'
+            : formatNumber(asWeight(record.heaviest.value), 1),
+          record.heaviest?.date ?? '—',
+          record.mostReps?.value ?? 'not logged',
+          record.bestEstimated1rm === null
+            ? 'not logged'
+            : formatNumber(asWeight(record.bestEstimated1rm.value), 1),
+        ]),
+      ),
+    );
+    parts.push(
+      '  Note: e1RM is estimated from a working set with the Epley formula, not '
+      + 'a tested max. A record keeps the date it was first reached.',
+    );
   }
 
   // -------------------------------------------------------------- recovery

@@ -14,6 +14,7 @@ import { TrainingView } from '@/components/training/TrainingView';
 import {
   summariseTraining, summariseSessions, exercisePerformance, exerciseProgression,
 } from '@/lib/analytics/training';
+import { personalRecords, trainingConsistency } from '@/lib/analytics/prs';
 import { todayForUser } from '@/app/actions/log';
 import { compareDates } from '@/lib/normalization/dates';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
@@ -30,6 +31,10 @@ export default async function TrainingPage() {
 
   const sessionSummary = summariseSessions(sessions, sets);
   const summary = summariseTraining(sets);
+  // Both read the same 90-day window the page is titled with. Records are
+  // derived here because no source publishes them (see lib/analytics/prs.ts).
+  const records = personalRecords(sets);
+  const consistency = trainingConsistency(sessions, sets, today, 12);
 
   const setCountBySession = new Map<string, number>();
   for (const set of sets) {
@@ -58,6 +63,8 @@ export default async function TrainingPage() {
       summary={summary}
       setCountBySession={setCountBySession}
       rows={rows}
+      records={records}
+      consistency={consistency}
       today={today}
       exercises={exercises}
       weightUnit={(profile ?? DEFAULT_PROFILE).weightDisplayUnit}
