@@ -118,6 +118,22 @@ export function rowToDailyMetrics(row: DailyMetricsRow): DailyMetrics {
     hrvMs: toNumber(row.hrv_ms),
     sleepDurationMinutes: toNumber(row.sleep_duration_minutes),
     sleepScore: toNumber(row.sleep_score),
+    // 0016. Mapped here or they are invisible to every page - a column selected
+    // and not mapped looks healthy in the database and reaches nothing, which
+    // this file's header records having happened twice already.
+    bodyFatPct: toNumber(row.body_fat_pct),
+    vo2Max: toNumber(row.vo2_max),
+    distanceKm: toNumber(row.distance_km),
+    floors: toNumber(row.floors),
+    activeMinutes: toNumber(row.active_minutes),
+    activeZoneMinutes: toNumber(row.active_zone_minutes),
+    respiratoryRate: toNumber(row.respiratory_rate),
+    oxygenSaturationPct: toNumber(row.oxygen_saturation_pct),
+    remMinutes: toNumber(row.rem_minutes),
+    deepMinutes: toNumber(row.deep_minutes),
+    lightMinutes: toNumber(row.light_minutes),
+    awakeMinutes: toNumber(row.awake_minutes),
+    sleepTemperatureDeltaC: toNumber(row.sleep_temperature_delta_c),
     caloriesConsumed: toNumber(row.calories_consumed),
     proteinG: toNumber(row.protein_g),
     carbsG: toNumber(row.carbs_g),

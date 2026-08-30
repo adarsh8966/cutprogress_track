@@ -6,6 +6,7 @@
  * stored, so the honest integration today is copy-and-paste. Nothing on this
  * page claims an integration that does not exist.
  */
+import Link from 'next/link';
 import { ImportWorkbench } from '@/components/import/ImportWorkbench';
 import { HevyPanel } from '@/components/import/HevyPanel';
 import { Card } from '@/components/ui/primitives';
@@ -104,6 +105,22 @@ export default async function ImportPage() {
             and no Bevel credentials are stored anywhere in this app. Export or copy
             from Bevel and paste it here. If Bevel publishes an official API, that is
             the point to build a real integration.
+          </p>
+          <p>
+            <span className="text-ink">Google Health.</span> Implemented, and
+            connected from <Link href="/settings" className="underline">Settings</Link>.
+            It brings steps, distance, calories burned, heart rate, HRV, resting
+            heart rate, sleep and its stages, blood oxygen, respiratory rate,
+            body fat and VO2 max — and matches your workouts to the heart rate
+            recorded during them. It reads only; it never writes to Google, and
+            it has no permission to.
+          </p>
+          <p>
+            <span className="text-ink">Nutrition stays yours.</span> Google Health
+            can report food logs, and this app deliberately does not ask for
+            permission to read them. Calories and macros are entered here by hand
+            and nothing imported can change them. Calories BURNED are a different
+            measurement and do arrive from Google Health.
           </p>
           <p>
             <span className="text-ink">Health Connect.</span> Not implemented. It is

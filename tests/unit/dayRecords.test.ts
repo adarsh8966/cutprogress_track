@@ -12,7 +12,8 @@ import {
   liveRecords, supersededRecords, formatDuration,
   type DayRows,
 } from '@/lib/data/dayRecords';
-import type { DailyMetrics } from '@/lib/types';
+import type { DailyMetrics, LocalDate } from '@/lib/types';
+import { emptyDay } from '@/lib/defaults';
 import type { DisplayUnits } from '@/lib/normalization/units';
 
 const IMPERIAL: DisplayUnits = { weight: 'LB', length: 'IN', distance: 'MI' };
@@ -226,16 +227,7 @@ describe('formatDayField', () => {
 
 describe('canonicalSummary', () => {
   function day(partial: Partial<DailyMetrics>): DailyMetrics {
-    return {
-      localDate: '2026-08-28',
-      weightKg: null, waistCm: null, steps: null, activeCalories: null,
-      totalCaloriesBurned: null, workoutMinutes: null, cardioMinutes: null,
-      zone2Minutes: null, restingHeartRate: null, hrvMs: null,
-      sleepDurationMinutes: null, sleepScore: null, caloriesConsumed: null,
-      proteinG: null, carbsG: null, fatG: null, fiberG: null,
-      fruitVegServings: null, trainingSessions: null,
-      ...partial,
-    };
+    return { ...emptyDay('2026-08-28' as LocalDate), ...partial };
   }
 
   it('covers every measurement column, so none can be resolved and unseen', () => {

@@ -14,10 +14,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   getProfile, getWorkoutSession, getSetsForSession, getExerciseLibrary,
+  getSessionTelemetry,
 } from '@/lib/data/queries';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { Card, Figure, formatNumber } from '@/components/ui/primitives';
 import { SessionEditor } from '@/components/training/SessionEditor';
+import { SessionTelemetry } from '@/components/training/SessionTelemetry';
 import { WorkoutLogger } from '@/components/training/WorkoutLogger';
 
 import { displayWeight, WEIGHT_UNIT_LABEL } from '@/lib/normalization/units';
@@ -47,8 +49,9 @@ export default async function SessionPage({
   const session = await getWorkoutSession(sessionId);
   if (!session) notFound();
 
-  const [sets, today, loaded, exercises] = await Promise.all([
+  const [sets, today, loaded, exercises, telemetry] = await Promise.all([
     getSetsForSession(sessionId), todayForUser(), getProfile(), getExerciseLibrary(),
+    getSessionTelemetry([sessionId]),
   ]);
   const profile = loaded ?? DEFAULT_PROFILE;
   const weightUnit = WEIGHT_UNIT_LABEL[profile.weightDisplayUnit];
@@ -137,6 +140,8 @@ export default async function SessionPage({
           />
         </Card>
       </div>
+
+      <SessionTelemetry telemetry={telemetry.get(sessionId) ?? null} />
 
       <Card title="Exercises and sets">
         {sets.length === 0 ? (

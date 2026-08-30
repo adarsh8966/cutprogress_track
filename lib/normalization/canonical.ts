@@ -198,6 +198,59 @@ export function resolveFields(
 }
 
 /**
+ * Restricts pinned fields to the observations their owner actually authored.
+ *
+ * THE PROBLEM. Resolution is recency-first, and that is right for corrections -
+ * it is the rule that stopped a hand-typed value outranking every later fix
+ * forever. But an imported measurement recorded LATER IN THE DAY than a manual
+ * correction is, by that rule, the newer observation. So a sync arriving
+ * afterwards would move the number the user had just set, silently, and the
+ * only trace would be a changed figure on a page nobody was looking at.
+ *
+ * A pin says: this (day, field) was authored by hand, so resolve it among the
+ * hand-authored observations. The imported observation is still stored, still
+ * carries its provenance, and is still shown - as available, not applied.
+ *
+ * A PIN NEVER BLANKS A DAY. If a pinned field has no manual observation left -
+ * the user withdrew it, or the pin outlived the row that set it - the pin is
+ * inert and the full candidate list stands. Suppressing every candidate would
+ * turn a measured day into "not logged", which is a worse lie than the one the
+ * pin exists to prevent.
+ */
+export function applyPins(
+  fields: Record<string, Observation[]>,
+  pinned: ReadonlySet<string>,
+): Record<string, Observation[]> {
+  if (pinned.size === 0) return fields;
+  const out: Record<string, Observation[]> = {};
+  for (const [field, observations] of Object.entries(fields)) {
+    if (!pinned.has(field)) {
+      out[field] = observations;
+      continue;
+    }
+    const manual = observations.filter((o) => o.source === 'MANUAL');
+    out[field] = manual.length > 0 ? manual : observations;
+  }
+  return out;
+}
+
+/**
+ * Fields where a pin is actually doing something: the day holds an observation
+ * the pin is keeping out of the canonical value. A pin over a field nobody else
+ * reported is real but inert, and saying so on screen would be noise.
+ */
+export function pinsInEffect(
+  fields: Record<string, Observation[]>,
+  pinned: ReadonlySet<string>,
+): string[] {
+  return [...pinned].filter((field) => {
+    const observations = fields[field] ?? [];
+    const manual = observations.filter((o) => o.source === 'MANUAL');
+    return manual.length > 0 && manual.length < observations.length;
+  }).sort();
+}
+
+/**
  * Fields whose canonical value came from more than one DISAGREEING source.
  *
  * Deliberately not "more than one observation": correcting a weight by logging

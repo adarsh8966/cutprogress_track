@@ -5,7 +5,8 @@ import { table, line, percent, formatRate } from '@/lib/context/format';
 import {
   FIXTURE_END, FIXTURE_PROFILE, fixtureDays, fixtureSets, fixtureSessions, fixtureCardio,
 } from '../helpers/fixtures';
-import type { DailyMetrics } from '@/lib/types';
+import type { DailyMetrics, LocalDate } from '@/lib/types';
+import { emptyDay } from '@/lib/defaults';
 
 const pack = generateContextPack({
   generatedFor: FIXTURE_END,
@@ -17,19 +18,7 @@ const pack = generateContextPack({
 });
 
 /** A canonical day with nothing measured on it. Every field null (spec §33). */
-function blankDay(localDate: string): DailyMetrics {
-  return {
-    localDate,
-    weightKg: null, waistCm: null,
-    steps: null, activeCalories: null, totalCaloriesBurned: null,
-    workoutMinutes: null, cardioMinutes: null, zone2Minutes: null,
-    restingHeartRate: null, hrvMs: null,
-    sleepDurationMinutes: null, sleepScore: null,
-    caloriesConsumed: null, proteinG: null, carbsG: null, fatG: null,
-    fiberG: null, fruitVegServings: null,
-    trainingSessions: null,
-  };
-}
+const blankDay = (localDate: string): DailyMetrics => emptyDay(localDate as LocalDate);
 
 describe('Context Pack (spec §30-§33, §53)', () => {
   it('is stamped with a schema version (spec §43)', () => {

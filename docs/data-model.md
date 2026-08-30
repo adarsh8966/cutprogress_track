@@ -16,6 +16,7 @@ by a named source.
 | `cardio_sessions` | type, duration, distance, average and maximum HR, HR zone, calories |
 | `workout_sessions` / `workout_sets` | sessions with title, duration, average and maximum HR and calories; set-level data with exercise order, notes, RPE and set type |
 | `health_imports` | the original pasted text, verbatim and forever |
+| `external_observations` | a provider's data point, verbatim, before interpretation |
 
 These are never updated and never deleted. That is enforced in `0008_rls.sql` by
 granting no such policy — with RLS on and no delete policy, a delete is refused
@@ -64,6 +65,64 @@ name, muscle group and equipment stay exactly as the seed wrote them. RLS on
 this table is deliberately **not** forced: `0009` is an upsert run by the
 migration owner, and forcing it would subject every future re-seed to the policy
 above.
+
+**External observations** (`0016`). `external_observations` is to a provider
+what `health_imports` is to a paste: the record as it arrived, before parsing
+dropped anything the schema does not model. It plays three roles at once.
+
+It is the **idempotency key** — unique on
+`(user_id, provider, data_type, external_id, coalesce(external_updated_at,
+'-infinity'))`, so an unchanged record is refused by the database, an edited one
+gets through because its version differs, and every version that ever arrived
+keeps its own row. `coalesce` rather than a bare column because every NULL is
+distinct in PostgreSQL, and a data type whose payload carries no update time
+would otherwise lose the guarantee silently.
+
+It is the **raw payload** §17 requires, and it is the **holding pen** for a
+supported data type CUT OS has no canonical destination for yet: `mapped_to` is
+null, the observation is still stored and still timestamped, and mapping it
+later is a column and a reader rather than a re-import of a window the provider
+may no longer return.
+
+`value` is deliberately unconstrained in sign, unlike
+`metric_observations.value`. A sleep skin temperature *derivation* is a
+deviation from a baseline, and a colder night than usual is a negative number
+that is entirely correct. A rail that would refuse a real measurement is not a
+safety rail.
+
+`sleep_records` and `cardio_sessions` gained external identity in the same
+migration, with a **partial** unique index (`where superseded_at is null`).
+Partial because a correction on these tables is a NEW row that supersedes its
+predecessor — the observation tables grant no UPDATE on their measurement
+columns — and a non-partial index would let the superseded row keep hold of the
+identity its replacement needs, refusing the correction and leaving the day with
+no live record at all.
+
+**Manual pins** (`0016`). Resolution is recency-first, which is right — it is
+the rule that stopped a hand-typed value outranking every later correction
+forever. But an imported measurement recorded LATER IN THE DAY than a manual
+correction is, by that rule, the newer observation, so a sync arriving afterwards
+would move the number the user had just fixed. `canonical_field_pins` records
+that a (day, field) was authored by hand; the resolver then considers only
+hand-authored observations for it. The import is still stored, still carries its
+provenance, and is shown as available rather than applied. A pin changes which
+observation is canonical and nothing else, and it is cleared rather than deleted.
+
+**Session telemetry** (`0016`). `session_telemetry` holds the physiology a
+provider recorded during a training session, and the correlation that attached
+it: the match method and confidence, the overlap, the heart-rate coverage, and
+per-zone minutes both as CUT OS computes them and as the provider reports them.
+Kept separate from `workout_sessions` because those are facts about a JOIN
+between two systems, and putting them on the session would make
+`workout_sessions` a table that knows what Google Health is. It is a cache — it
+can be rebuilt by re-running the matcher — so it is one of the few tables that
+may be deleted.
+
+**Heart-rate zones** (`0016`). `hr_zone_definitions` holds the boundaries and,
+crucially, `method` — MEASURED_MAX, ESTIMATED_MAX or MANUAL. An age-derived
+maximum is a model parameter, not a measurement, and it is stored here with its
+method rather than written into `metric_observations` where it would read as
+something a device recorded.
 
 `sync_runs` records one row per synchronisation attempt — status, times, counts,
 warnings, error and cursor. Never deleted (the privilege is withheld outright, a

@@ -4,17 +4,48 @@
  * Also surfaces the audit log, because spec §41 requires that automated changes
  * are visible: "Don't silently change someone's target."
  */
-import { getProfile, getSystemEvents } from '@/lib/data/queries';
+import {
+  getProfile, getSystemEvents, getSyncRuns, getHeartRateZones,
+} from '@/lib/data/queries';
 import { signOut } from '@/app/actions/auth';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
 import { SettingsForm } from '@/components/dashboard/SettingsForm';
 import { RebuildCanonical } from '@/components/dashboard/RebuildCanonical';
+import { GoogleHealthPanel } from '@/components/settings/GoogleHealthPanel';
 import { Card } from '@/components/ui/primitives';
+import { isGoogleHealthConfigured } from '@/lib/integrations/googleHealth/env';
+import { GOOGLE_HEALTH_PROVIDER } from '@/lib/integrations/googleHealth/sync';
+import {
+  getGoogleHealthConnection, suggestedMaxHeartRate,
+} from '@/app/actions/googleHealth';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SettingsPage() {
-  const [profile, events] = await Promise.all([getProfile(), getSystemEvents(25)]);
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const [profile, events, connection, googleRuns, suggestedMax, zones] = await Promise.all([
+    getProfile(),
+    getSystemEvents(25),
+    getGoogleHealthConnection(),
+    getSyncRuns(GOOGLE_HEALTH_PROVIDER, 5),
+    suggestedMaxHeartRate(),
+    getHeartRateZones(),
+  ]);
+
+  /**
+   * The outcome of an OAuth round trip, which arrives as a query parameter
+   * because the callback is a redirect and has nowhere else to put it.
+   */
+  const kind = typeof params.google_health === 'string' ? params.google_health : null;
+  const notice = kind === null ? null : {
+    kind,
+    detail: typeof params.detail === 'string' ? params.detail : null,
+    missing: typeof params.missing === 'string' ? params.missing.split(',') : [],
+  };
 
   return (
     <div className="space-y-8">
@@ -29,6 +60,23 @@ export default async function SettingsPage() {
 
       <Card>
         <SettingsForm profile={profile ?? DEFAULT_PROFILE} />
+      </Card>
+
+      <Card title="Connected apps">
+        <p className="mb-4 text-[11px] leading-relaxed text-ink-faint">
+          An external source fills the same fields you can fill by hand, and
+          never overrides one you did. A value you enter yourself is pinned for
+          that day: the imported reading is still stored and still visible, it
+          just does not become the day&rsquo;s number until you say so.
+        </p>
+        <GoogleHealthPanel
+          configured={isGoogleHealthConfigured()}
+          connection={connection}
+          runs={googleRuns}
+          suggestedMax={suggestedMax}
+          currentMax={zones[0]?.max_heart_rate ?? null}
+          notice={notice}
+        />
       </Card>
 
       <Card title="Maintenance">
@@ -98,8 +146,12 @@ export default async function SettingsPage() {
             image upload and no computer vision anywhere in this app.
           </li>
           <li>
-            No third-party credentials are stored. Data arrives by manual entry or
-            by pasting text you copied yourself.
+            Data arrives by manual entry, by pasting text you copied yourself, or
+            from a source you connected. A connected source&rsquo;s authorisation
+            is encrypted before it is stored, with a key held only in the
+            server&rsquo;s environment and never in the database - so a copy of
+            the database is not a way into any other account. It is never sent to
+            your browser, and disconnecting destroys it.
           </li>
         </ul>
       </Card>

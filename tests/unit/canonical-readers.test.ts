@@ -60,6 +60,25 @@ const READERS: Record<keyof DailyMetrics, string[]> = {
   sleepDurationMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
   sleepScore: ['lib/analytics/recovery.ts'],
 
+  /*
+   * From migration 0016. Every one arrives from a connected wearable, and every
+   * one has to be read somewhere or it is a column that is stored, confirmed
+   * and invisible - which is the entire failure this file exists to catch.
+   */
+  bodyFatPct: ['lib/context/generate.ts', 'app/(app)/progress/page.tsx'],
+  vo2Max: ['lib/context/generate.ts', 'app/(app)/progress/page.tsx'],
+  distanceKm: ['lib/context/generate.ts'],
+  floors: ['lib/context/generate.ts'],
+  activeMinutes: ['lib/context/generate.ts'],
+  activeZoneMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  respiratoryRate: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  oxygenSaturationPct: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  remMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  deepMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  lightMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  awakeMinutes: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+  sleepTemperatureDeltaC: ['lib/analytics/recovery.ts', 'lib/context/generate.ts'],
+
   caloriesConsumed: ['app/(app)/nutrition/page.tsx', 'lib/context/generate.ts'],
   proteinG: ['app/(app)/nutrition/page.tsx', 'lib/context/generate.ts'],
   carbsG: ['app/(app)/nutrition/page.tsx', 'lib/context/generate.ts'],
@@ -91,6 +110,21 @@ const CONTEXT_PACK_ONLY: Partial<Record<keyof DailyMetrics, string>> = {
     'Training sums the session rows directly (getWorkoutSessions), so the '
     + 'measurement is on screen; this column is the rolled-up copy the Context '
     + 'Pack averages.',
+  // Three activity metrics that a wearable reports and that CUT OS has no
+  // decision to make about. Putting each on the Dashboard would be three more
+  // cards competing with weight, nutrition and training for the same attention,
+  // and the app's whole premise is that those three are what matter. They are
+  // measured, resolved, and available to the Context Pack - which is where a
+  // question like "was I less active the week the weight stalled?" gets asked.
+  distanceKm:
+    'Daily distance. Reported in the Context Pack; no screen shows it, because '
+    + 'steps already answers "how much did I move today" on the Dashboard.',
+  floors:
+    'Floors climbed. Context Pack only - a supporting detail for an activity '
+    + 'question, not a figure worth its own card.',
+  activeMinutes:
+    'Active minutes. Context Pack only, for the same reason as distance: the '
+    + 'Dashboard reports activity through steps and calories.',
 };
 
 describe('every canonical field is read by something', () => {

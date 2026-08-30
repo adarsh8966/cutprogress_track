@@ -362,6 +362,38 @@ export function generateContextPack(input: ContextInput): ContextPack {
       : `- Not computable: ${waistTrend.notes[0] ?? 'insufficient data'}`,
   );
 
+  // ------------------------------------------------- body composition & fitness
+  //
+  // Body fat and VO2 max change slowly and are measured occasionally, so they
+  // are reported as latest-with-a-date rather than as a rate: a weekly reading
+  // has no weekly trend worth quoting, and quoting one anyway is how a scale's
+  // day-to-day noise becomes a conclusion.
+  parts.push(section('Body composition and cardio fitness'));
+  parts.push(
+    [
+      derivedLine(
+        'Latest body fat',
+        latestReading(pick(days, 'bodyFatPct'), end, 90),
+        (v) => `${formatNumber(v, 1)}%`,
+      ),
+      derivedLine(
+        '90-day average body fat',
+        trailingAverage(pick(days, 'bodyFatPct'), end, 30),
+        (v) => `${formatNumber(v, 1)}%`,
+      ),
+      derivedLine(
+        'Latest VO2 max',
+        latestReading(pick(days, 'vo2Max'), end, 90),
+        (v) => `${formatNumber(v, 1)} ml/kg/min`,
+      ),
+      derivedLine(
+        '30-day average VO2 max',
+        trailingAverage(pick(days, 'vo2Max'), end, 30),
+        (v) => `${formatNumber(v, 1)} ml/kg/min`,
+      ),
+    ].join('\n'),
+  );
+
   // ------------------------------------------------------------- nutrition
   parts.push(section('Nutrition'));
   parts.push(
@@ -421,6 +453,29 @@ export function generateContextPack(input: ContextInput): ContextPack {
           ? null
           : formatNumber(trailingAverage(pick(days, 'activeCalories'), end, 30).value!, 0),
         'kcal',
+      ),
+      // From a connected wearable. Each is reported as a 30-day average with
+      // its own coverage rule, so a metric the device does not measure reads as
+      // "not logged" rather than as a zero.
+      derivedLine(
+        'Daily distance (30-day average)',
+        trailingAverage(pick(days, 'distanceKm'), end, 30),
+        (v) => `${formatNumber(displayDistance(v, units.distance), 2)} ${unit.distance}`,
+      ),
+      derivedLine(
+        'Active minutes (30-day average)',
+        trailingAverage(pick(days, 'activeMinutes'), end, 30),
+        (v) => `${formatNumber(v, 0)} min`,
+      ),
+      derivedLine(
+        'Active zone minutes (30-day average)',
+        trailingAverage(pick(days, 'activeZoneMinutes'), end, 30),
+        (v) => `${formatNumber(v, 0)} min`,
+      ),
+      derivedLine(
+        'Floors climbed (30-day average)',
+        trailingAverage(pick(days, 'floors'), end, 30),
+        (v) => formatNumber(v, 0),
       ),
     ].join('\n'),
   );
@@ -581,6 +636,30 @@ export function generateContextPack(input: ContextInput): ContextPack {
       line(
         'Rest days (last 28)',
         trailingWindow(sessions, end, 28).filter((p) => p.value === 0).length,
+      ),
+      // Sleep structure and overnight physiology, where a wearable measured it.
+      // Reported as latest-and-average like everything else here, so a single
+      // odd night cannot read as a trend.
+      derivedLine('Latest deep sleep', latestReading(pick(days, 'deepMinutes'), end, 30), formatSleep),
+      derivedLine('Latest REM sleep', latestReading(pick(days, 'remMinutes'), end, 30), formatSleep),
+      derivedLine('Latest light sleep', latestReading(pick(days, 'lightMinutes'), end, 30), formatSleep),
+      derivedLine('Latest awake in the night', latestReading(pick(days, 'awakeMinutes'), end, 30), formatSleep),
+      derivedLine(
+        '30-day average respiratory rate',
+        trailingAverage(pick(days, 'respiratoryRate'), end, 30),
+        (v) => `${formatNumber(v, 1)} breaths/min`,
+      ),
+      derivedLine(
+        '30-day average blood oxygen',
+        trailingAverage(pick(days, 'oxygenSaturationPct'), end, 30),
+        (v) => `${formatNumber(v, 1)}%`,
+      ),
+      derivedLine(
+        'Latest sleep skin temperature',
+        latestReading(pick(days, 'sleepTemperatureDeltaC'), end, 30),
+        // Signed on purpose: a night above baseline and a night below it are
+        // different signals, and an unsigned figure would report them alike.
+        (v) => `${v > 0 ? '+' : ''}${formatNumber(v, 2)} °C from baseline`,
       ),
     ].join('\n'),
   );
