@@ -15,6 +15,17 @@ import { daysBetween, endOfMonth, endOfWeek, startOfMonth, startOfWeek } from '@
 import { mean, presentValues, roundTo } from './series';
 import type { DatedValue } from '@/lib/types';
 
+/** Days carrying a measurement, per averaged metric, out of the period. */
+export interface ReviewCoverage {
+  /** Days in the period, whether or not anything was recorded on them. */
+  days: number;
+  calories: number;
+  protein: number;
+  steps: number;
+  weight: number;
+  cardio: number;
+}
+
 export type Assessment =
   | 'ON_TRACK'
   | 'AHEAD_OF_PLAN'
@@ -32,6 +43,16 @@ export interface WeeklyReview {
   averageCalories: number | null;
   averageProteinG: number | null;
   averageSteps: number | null;
+  /**
+   * How many of the week's days each of those three averages was built from.
+   *
+   * Without this the page printed "Average calories: 2,050" over a week with
+   * one logged day, which is a single meal presented as a weekly habit. The
+   * arithmetic is unchanged - the mean is still taken over the days that carry
+   * data, which is the only honest denominator - but the claim it supports
+   * depends entirely on how many days those are, so the count travels with it.
+   */
+  coverage: ReviewCoverage;
   /**
    * Sessions recorded that week, counted from daily_metrics - the same source
    * the adherence block below uses. It used to be counted from workout_sets
@@ -102,10 +123,18 @@ export function weeklyReview(
       ? endWaist.value - startWaist.value
       : null;
 
-  const averageOf = (key: keyof DailyMetrics): number | null => {
+  /** The mean over the days that carry data, and how many of those there were. */
+  const averageOf = (key: keyof DailyMetrics): { value: number | null; days: number } => {
     const values = presentValues(week.map((day) => day[key] as number | null));
-    return values.length ? roundTo(mean(values)!, 1) : null;
+    return {
+      value: values.length ? roundTo(mean(values)!, 1) : null,
+      days: values.length,
+    };
   };
+
+  const calorieAvg = averageOf('caloriesConsumed');
+  const proteinAvg = averageOf('proteinG');
+  const stepAvg = averageOf('steps');
 
   const weekSets = sets.filter((s) => s.date >= weekStart && s.date <= weekEnd);
   const training = summariseTraining(weekSets);
@@ -147,9 +176,20 @@ export function weeklyReview(
     endWeightKg: endAvg.value,
     weightChangeKg: weightChange === null ? null : roundTo(weightChange, 3),
     waistChangeCm: waistChange === null ? null : roundTo(waistChange, 2),
-    averageCalories: averageOf('caloriesConsumed'),
-    averageProteinG: averageOf('proteinG'),
-    averageSteps: averageOf('steps'),
+    averageCalories: calorieAvg.value,
+    averageProteinG: proteinAvg.value,
+    averageSteps: stepAvg.value,
+    coverage: {
+      // The period's own length, not a fixed 7: a week at the edge of the
+      // loaded window holds fewer canonical rows, and "3 of 7" would then be
+      // wrong in the direction that understates the data.
+      days: Math.max(week.length, daysBetween(weekStart, weekEnd) + 1),
+      calories: calorieAvg.days,
+      protein: proteinAvg.days,
+      steps: stepAvg.days,
+      weight: presentValues(week.map((day) => day.weightKg)).length,
+      cardio: cardioValues.length,
+    },
     trainingSessions: sessionsIn(week),
     workingSets: training.value?.totalWorkingSets ?? 0,
     cardioMinutes: cardioValues.length ? roundTo(cardioValues.reduce((a, b) => a + b, 0), 0) : null,
@@ -184,6 +224,8 @@ export interface MonthlyReview {
   waistChangeCm: number | null;
   averageCalories: number | null;
   averageSteps: number | null;
+  /** Days behind each average, for the same reason as the weekly review. */
+  coverage: ReviewCoverage;
   /** Counted from daily_metrics, so imported sessions are included. */
   trainingSessions: number;
   workingSets: number;
@@ -234,6 +276,14 @@ export function monthlyReview(
       waists.length > 1 ? roundTo(waists[waists.length - 1]! - waists[0]!, 2) : null,
     averageCalories: calories.length ? roundTo(mean(calories)!, 0) : null,
     averageSteps: steps.length ? roundTo(mean(steps)!, 0) : null,
+    coverage: {
+      days: Math.max(month.length, daysBetween(monthStart, monthEnd) + 1),
+      calories: calories.length,
+      protein: presentValues(month.map((day) => day.proteinG)).length,
+      steps: steps.length,
+      weight: weights.length,
+      cardio: presentValues(month.map((day) => day.cardioMinutes)).length,
+    },
     trainingSessions: sessionsIn(month),
     workingSets: training.value?.totalWorkingSets ?? 0,
     longestLoggingStreak: best,

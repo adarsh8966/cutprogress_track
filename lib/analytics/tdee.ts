@@ -32,7 +32,7 @@
  * from four days of half-logged intake.
  */
 import type { DatedValue, Derived, LocalDate, UserProfile } from '@/lib/types';
-import { derived, insufficient } from '@/lib/types';
+import { derived, insufficient, unavailable } from '@/lib/types';
 import { KCAL_PER_KG_BODY_MASS } from '@/lib/normalization/units';
 import { coverageOf, mean, presentValues, roundTo, trailingWindow } from './series';
 import { trend } from './trend';
@@ -118,7 +118,7 @@ export function priorTdee(
   };
 
   if (profile.heightCm === null) {
-    return insufficient<number>(
+    return unavailable<number>(
       'Estimated TDEE (prior)',
       inputs,
       'Height is not set, so a BMR estimate cannot be computed.',
@@ -193,15 +193,19 @@ export function estimateTdee(
       'Observed TDEE',
       inputs,
       'No usable weight trend in the window, so energy balance cannot be evaluated.',
+      weightTrend.observations ?? 0,
     );
   }
 
   const prior = priorTdee(profile, latestWeight, averageSteps, end);
   if (prior.value === null) {
-    return insufficient<TdeeEstimate>(
+    // The prior failing is a settings gap (height), so it propagates as one
+    // rather than being reported as missing measurements.
+    return unavailable<TdeeEstimate>(
       'Observed TDEE',
       { ...inputs, priorNote: prior.notes },
       `The prior could not be computed: ${prior.notes[0] ?? 'unknown reason'}`,
+      intakeCoverage.present,
     );
   }
 

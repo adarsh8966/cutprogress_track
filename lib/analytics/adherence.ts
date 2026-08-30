@@ -11,7 +11,7 @@
  *    1,950 target is as far off plan as eating 2,500, not twice as good.
  */
 import type { DatedValue, Derived, LocalDate, Targets } from '@/lib/types';
-import { derived, insufficient } from '@/lib/types';
+import { derived, insufficient, unavailable } from '@/lib/types';
 import { coverageOf, mean, presentValues, roundTo, trailingWindow } from './series';
 
 export interface AdherenceBreakdown {
@@ -64,14 +64,20 @@ function windowAdherence(
     averageActual: values.length ? roundTo(mean(values)!, 1) : null,
   };
 
+  // "No target set" and "nothing logged" are answered by different actions -
+  // one by Settings, the other by logging - and collapsing them into the same
+  // sentence is how the Dashboard came to report a logged day as not logged.
   if (target === null) {
-    return insufficient<number>(label, inputs, 'No target is set for this metric.');
+    return unavailable<number>(
+      label, inputs, 'No target is set for this metric.', coverage.present,
+    );
   }
   if (values.length === 0) {
     return insufficient<number>(
       label,
       inputs,
       `Nothing logged in the ${windowDays} days ending ${end}.`,
+      0,
     );
   }
 
@@ -93,6 +99,7 @@ function windowAdherence(
             `${windowDays}. Unlogged days are counted in logging adherence instead.`,
         ]
       : [],
+    coverage.present,
   );
 }
 
@@ -123,6 +130,7 @@ export function loggingAdherence(
     },
     score >= 0.85 ? 'HIGH' : 'MODERATE',
     [],
+    Math.max(calorieCoverage.present, weightCoverage.present),
   );
 }
 
@@ -135,6 +143,7 @@ export function trainingAdherence(
 ): Derived<number> {
   const window = trailingWindow(sessionsPerDay, end, windowDays);
   const completed = presentValues(window.map((p) => p.value)).reduce((a, b) => a + b, 0);
+  const coverage = coverageOf(window.map((p) => p.value));
   const expected =
     sessionsPerWeekTarget === null ? null : (sessionsPerWeekTarget * windowDays) / 7;
 
@@ -142,15 +151,21 @@ export function trainingAdherence(
     windowDays,
     endDate: end,
     completedSessions: completed,
+    daysWithData: coverage.present,
     sessionsPerWeekTarget,
     expectedSessions: expected === null ? null : roundTo(expected, 1),
   };
 
+  // This is the figure the Dashboard's Training card renders. Without a target
+  // there is nothing to be adherent TO, which is a settings gap - and reporting
+  // it as "not logged" on a day with a session recorded on it is the exact
+  // false claim this vocabulary exists to prevent.
   if (expected === null || expected <= 0) {
-    return insufficient<number>(
+    return unavailable<number>(
       'Training adherence',
       inputs,
       'No training frequency target is set.',
+      coverage.present,
     );
   }
 
@@ -160,6 +175,7 @@ export function trainingAdherence(
     inputs,
     'HIGH',
     [],
+    coverage.present,
   );
 }
 
@@ -171,6 +187,7 @@ export function cardioAdherence(
 ): Derived<number> {
   const window = trailingWindow(cardioMinutes, end, windowDays);
   const total = presentValues(window.map((p) => p.value)).reduce((a, b) => a + b, 0);
+  const coverage = coverageOf(window.map((p) => p.value));
   const expected =
     minutesPerWeekTarget === null ? null : (minutesPerWeekTarget * windowDays) / 7;
 
@@ -178,12 +195,15 @@ export function cardioAdherence(
     windowDays,
     endDate: end,
     totalMinutes: roundTo(total, 1),
+    daysWithData: coverage.present,
     minutesPerWeekTarget,
     expectedMinutes: expected === null ? null : roundTo(expected, 1),
   };
 
   if (expected === null || expected <= 0) {
-    return insufficient<number>('Cardio adherence', inputs, 'No cardio target is set.');
+    return unavailable<number>(
+      'Cardio adherence', inputs, 'No cardio target is set.', coverage.present,
+    );
   }
 
   return derived(
@@ -192,6 +212,7 @@ export function cardioAdherence(
     inputs,
     'HIGH',
     [],
+    coverage.present,
   );
 }
 
@@ -233,7 +254,7 @@ export function computeAdherence(
   const scored = components.filter((c) => c.value !== null).map((c) => c.value!);
   const overall =
     scored.length === 0
-      ? insufficient<number>(
+      ? unavailable<number>(
           'Overall adherence',
           { componentCount: 0 },
           'No adherence component could be computed; set targets in Settings.',

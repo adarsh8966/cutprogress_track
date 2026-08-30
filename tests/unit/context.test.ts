@@ -5,6 +5,7 @@ import { table, line, percent, formatRate } from '@/lib/context/format';
 import {
   FIXTURE_END, FIXTURE_PROFILE, fixtureDays, fixtureSets, fixtureSessions, fixtureCardio,
 } from '../helpers/fixtures';
+import type { DailyMetrics } from '@/lib/types';
 
 const pack = generateContextPack({
   generatedFor: FIXTURE_END,
@@ -14,6 +15,21 @@ const pack = generateContextPack({
   sessions: fixtureSessions(),
   cardio: fixtureCardio(),
 });
+
+/** A canonical day with nothing measured on it. Every field null (spec §33). */
+function blankDay(localDate: string): DailyMetrics {
+  return {
+    localDate,
+    weightKg: null, waistCm: null,
+    steps: null, activeCalories: null, totalCaloriesBurned: null,
+    workoutMinutes: null, cardioMinutes: null, zone2Minutes: null,
+    restingHeartRate: null, hrvMs: null,
+    sleepDurationMinutes: null, sleepScore: null,
+    caloriesConsumed: null, proteinG: null, carbsG: null, fatG: null,
+    fiberG: null, fruitVegServings: null,
+    trainingSessions: null,
+  };
+}
 
 describe('Context Pack (spec §30-§33, §53)', () => {
   it('is stamped with a schema version (spec §43)', () => {
@@ -146,8 +162,40 @@ describe('Context Pack (spec §30-§33, §53)', () => {
       cardio: [],
     });
     expect(empty.body).toContain('FITNESS CONTEXT PACK');
-    expect(empty.body).toContain('not computable');
+    // With no observations at all, every figure is genuinely NOT LOGGED - the
+    // one case those words are true of. The pack says so rather than the
+    // vaguer "not computable", which covers three different situations and
+    // leaves ChatGPT to guess which one it is reading.
+    expect(empty.body).toContain('not logged');
     expect(empty.body).not.toMatch(/NaN|undefined|Infinity/);
+  });
+
+  /**
+   * The pack is what ChatGPT reasons over, so a missing figure has to say why
+   * it is missing. "No measurements" and "some measurements, too few to
+   * average" support completely different advice.
+   */
+  it('distinguishes an unlogged metric from a sparsely logged one', () => {
+    const sparse = generateContextPack({
+      generatedFor: FIXTURE_END,
+      profile: FIXTURE_PROFILE,
+      // Four days of resting heart rate inside a thirty-day window: enough to
+      // exist, far too few for the 30-day average to be reported.
+      days: [
+        { ...blankDay('2026-11-17'), restingHeartRate: 62 },
+        { ...blankDay('2026-11-18'), restingHeartRate: 59 },
+        { ...blankDay('2026-11-19'), restingHeartRate: 58 },
+        { ...blankDay('2026-11-20'), restingHeartRate: 58 },
+      ],
+      sets: [],
+      sessions: [],
+      cardio: [],
+    });
+
+    // The sparse metric names its coverage instead of claiming absence.
+    expect(sparse.body).toMatch(/30-day average resting heart rate: not computable - 4 day/);
+    // ...while a metric nothing wrote still reads as never recorded.
+    expect(sparse.body).toMatch(/HRV: not logged/);
   });
 
   it('never renders NaN, undefined or Infinity', () => {

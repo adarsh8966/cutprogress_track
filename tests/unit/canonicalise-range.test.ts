@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { rebuildRange } = await import('@/lib/data/canonicalise');
+const { rebuildRange, rebuildDailyMetrics } = await import('@/lib/data/canonicalise');
 
 /** Enough of a Supabase client for the rebuild, failing on the named date. */
 function clientFailingOn(badDate: string) {
@@ -69,5 +69,80 @@ describe('rebuildRange', () => {
     const { client, upserted } = clientFailingOn('never');
     expect(await rebuildRange(client as never, 'user', [])).toEqual({ failed: [] });
     expect(upserted).toEqual([]);
+  });
+});
+
+/**
+ * A REBUILD THAT COULD NOT READ MUST NOT WRITE.
+ *
+ * These two cases are the difference between "this day holds no measurement"
+ * and "this day could not be read", which the canonical layer used to collapse
+ * into the same row of nulls - and then upsert over real values, reporting
+ * success. daily_metrics is what every page reads, so that is a stored
+ * measurement disappearing from the app while sitting safely on disk.
+ */
+describe('rebuildDailyMetrics does not write an answer it does not have', () => {
+  /** A client whose reads all succeed except for the named table. */
+  function clientFailingToRead(badTable: string, rows: Record<string, unknown>[] = []) {
+    const upserts: Record<string, unknown>[] = [];
+    const client = {
+      from: (table: string) => ({
+        select: () => ({
+          eq: async () =>
+            table === badTable
+              ? { data: null, error: { message: 'connection reset' } }
+              : { data: table === 'body_measurements' ? rows : [], error: null },
+        }),
+        upsert: async (row: Record<string, unknown>) => {
+          upserts.push(row);
+          return { error: null };
+        },
+      }),
+    };
+    return { client, upserts };
+  }
+
+  it('throws instead of blanking the day when a read fails', async () => {
+    const { client, upserts } = clientFailingToRead('body_measurements');
+    await expect(
+      rebuildDailyMetrics(client as never, 'user', '2026-08-29'),
+    ).rejects.toThrow(/could not read body_measurements/);
+    // The crucial half: nothing reached daily_metrics, so whatever the day
+    // already resolved to is still there.
+    expect(upserts).toEqual([]);
+  });
+
+  it('names the table that failed, so the failure is actionable', async () => {
+    const { client } = clientFailingToRead('cardio_sessions');
+    await expect(
+      rebuildDailyMetrics(client as never, 'user', '2026-08-29'),
+    ).rejects.toThrow(/cardio_sessions.*connection reset/s);
+  });
+
+  /**
+   * The under-migrated database. Migration 0012 adds superseded_at to the
+   * scalar observation tables; a project that has not run it returns rows with
+   * no such key. A strict `=== null` test reads every one of them as withdrawn
+   * and resolves the whole day to nulls - the measurement is on disk, the app
+   * says it was never recorded.
+   */
+  it('counts an observation whose supersession column is absent', async () => {
+    const { client, upserts } = clientFailingToRead('none', [
+      { id: 'a', weight_kg: 92.079, waist_cm: null, source: 'MANUAL',
+        measured_at: '2026-08-29T08:12:00Z' },
+    ]);
+    await rebuildDailyMetrics(client as never, 'user', '2026-08-29');
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]!.weight_kg).toBeCloseTo(92.079, 3);
+  });
+
+  it('still excludes an observation that says it was superseded', async () => {
+    const { client, upserts } = clientFailingToRead('none', [
+      { id: 'a', weight_kg: 92.079, waist_cm: null, source: 'MANUAL',
+        measured_at: '2026-08-29T08:12:00Z',
+        superseded_at: '2026-08-30T09:00:00Z', superseded_by: null },
+    ]);
+    await rebuildDailyMetrics(client as never, 'user', '2026-08-29');
+    expect(upserts[0]!.weight_kg).toBeNull();
   });
 });

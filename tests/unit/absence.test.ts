@@ -13,7 +13,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { trailingAverage } from '@/lib/analytics/movingAverage';
-import { isInsufficientNotAbsent, derived, insufficient } from '@/lib/types';
+import {
+  isInsufficientNotAbsent, derived, insufficient, unavailable, stateOf,
+} from '@/lib/types';
 import type { DatedValue } from '@/lib/types';
 
 /** The live import: four readings inside a thirty-day window. */
@@ -74,5 +76,57 @@ describe('the Derived constructors', () => {
     // Absent `observations` must not be guessed at: a method that never
     // counted cannot claim data exists.
     expect(isInsufficientNotAbsent(insufficient('m', {}, 'why'))).toBe(false);
+  });
+});
+
+/**
+ * The fourth state, and the one that must never be claimed by default.
+ *
+ * "No target is set" is answered in Settings; "one of twenty-eight days is
+ * logged" is answered by waiting; "nothing was ever recorded" is answered by
+ * logging. A screen that says "not logged" for all three is wrong about two of
+ * them, and it was wrong about the one that mattered: the Dashboard reported
+ * Training as never logged on a day carrying a training session, because
+ * adherence had no target to score against and no way to say so.
+ */
+describe('stateOf separates the four claims', () => {
+  it('calls a computed value PRESENT', () => {
+    expect(stateOf(derived(1, 'm', {}, 'HIGH'))).toBe('PRESENT');
+    // A measured zero is a value, not an absence (spec §33).
+    expect(stateOf(derived(0, 'm', {}, 'HIGH'))).toBe('PRESENT');
+  });
+
+  it('calls a counted, empty window NOT_LOGGED', () => {
+    expect(stateOf(insufficient('m', {}, 'why', 0))).toBe('NOT_LOGGED');
+  });
+
+  it('calls a counted, sparse window INSUFFICIENT', () => {
+    expect(stateOf(insufficient('m', {}, 'why', 4))).toBe('INSUFFICIENT');
+    expect(stateOf(trailingAverage(SPARSE, '2026-08-29', 30))).toBe('INSUFFICIENT');
+  });
+
+  it('calls a figure that cannot be computed at all UNAVAILABLE', () => {
+    expect(stateOf(unavailable('m', {}, 'No target is set.'))).toBe('UNAVAILABLE');
+  });
+
+  it('keeps UNAVAILABLE distinct even when data exists', () => {
+    // Days logged and no target set: both facts are true, and the actionable
+    // one is the target.
+    const d = unavailable('m', {}, 'No target is set.', 28);
+    expect(stateOf(d)).toBe('UNAVAILABLE');
+    expect(d.observations).toBe(28);
+  });
+
+  it('refuses to guess when the method did not count', () => {
+    // The old default was to render this as "not logged", which asserts
+    // something about the database that the method never checked.
+    expect(stateOf(insufficient('m', {}, 'why'))).toBe('UNKNOWN');
+  });
+
+  it('keeps isInsufficientNotAbsent meaning exactly INSUFFICIENT', () => {
+    expect(isInsufficientNotAbsent(insufficient('m', {}, 'why', 4))).toBe(true);
+    expect(isInsufficientNotAbsent(insufficient('m', {}, 'why', 0))).toBe(false);
+    expect(isInsufficientNotAbsent(unavailable('m', {}, 'why', 4))).toBe(false);
+    expect(isInsufficientNotAbsent(derived(1, 'm', {}, 'HIGH'))).toBe(false);
   });
 });

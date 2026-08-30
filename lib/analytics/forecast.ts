@@ -8,7 +8,7 @@
  * from a slope that does not reach it would be fiction.
  */
 import type { DatedValue, Derived, LocalDate } from '@/lib/types';
-import { derived, insufficient } from '@/lib/types';
+import { derived, insufficient, unavailable } from '@/lib/types';
 import { addDays } from '@/lib/normalization/dates';
 import { roundTo } from './series';
 import { trend } from './trend';
@@ -50,14 +50,20 @@ export function forecastTargetDate(
       : null,
   };
 
+  // No target is a settings gap, not a data gap: more weigh-ins will never
+  // produce a forecast, so this must not read as "not logged" (spec §33).
   if (targetKg === null) {
-    return insufficient<Forecast>('Target date forecast', inputs, 'No target weight is set.');
+    return unavailable<Forecast>(
+      'Target date forecast', inputs, 'No target weight is set.',
+      weightTrend.observations,
+    );
   }
   if (weightTrend.value === null) {
     return insufficient<Forecast>(
       'Target date forecast',
       inputs,
       weightTrend.notes[0] ?? 'Not enough weight data to fit a trend.',
+      weightTrend.observations ?? 0,
     );
   }
 
@@ -86,12 +92,16 @@ export function forecastTargetDate(
   const slopePerDay = weightTrend.value.perDay;
   // Moving away from target, or not moving: no honest date exists.
   if (slopePerDay === 0 || Math.sign(slopePerDay) !== Math.sign(remaining)) {
-    return insufficient<Forecast>(
+    // The data is sufficient; it simply does not reach the target. No amount
+    // of further logging makes a date exist, so this is UNAVAILABLE rather
+    // than insufficient.
+    return unavailable<Forecast>(
       'Target date forecast',
       inputs,
       slopePerDay === 0
         ? 'The weight trend is flat, so no target date can be projected.'
         : 'The current trend moves away from the target, so no target date can be projected.',
+      weightTrend.observations,
     );
   }
 

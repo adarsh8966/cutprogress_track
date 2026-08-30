@@ -18,7 +18,7 @@
 import type {
   DailyMetrics, DatedValue, Derived, LocalDate, UserProfile,
 } from '@/lib/types';
-import { ANALYTICS_VERSION } from '@/lib/types';
+import { ANALYTICS_VERSION, stateOf } from '@/lib/types';
 import { banner, formatNumber, formatRate, line, percent, section, table } from './format';
 import { CHATGPT_INSTRUCTIONS } from './instructions';
 import { movingAverages, trailingAverage } from '@/lib/analytics/movingAverage';
@@ -100,16 +100,36 @@ function pick(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
   return pickMetric(days, key);
 }
 
-/** Renders a Derived value as "value (confidence)" plus its caveats. */
+/**
+ * Renders a Derived value as "value (confidence)" plus its caveats.
+ *
+ * A figure that could not be computed says WHICH kind of nothing it is, in the
+ * same vocabulary the screens use (stateOf, lib/types.ts). The distinction
+ * matters more here than anywhere: the pack is what ChatGPT reasons over, and
+ * "no measurements" and "four measurements, too few to average" support
+ * completely different advice. The reason is always carried, so the model never
+ * has to infer why a number is missing.
+ */
 function derivedLine(
   label: string,
   value: Derived<number>,
   render: (v: number) => string,
 ): string {
-  if (value.value === null) {
-    return `- ${label}: not computable (${value.notes[0] ?? 'insufficient data'})`;
+  if (value.value !== null) {
+    return `- ${label}: ${render(value.value)} [confidence: ${value.confidence.toLowerCase()}]`;
   }
-  return `- ${label}: ${render(value.value)} [confidence: ${value.confidence.toLowerCase()}]`;
+  const reason = value.notes[0] ?? 'insufficient data';
+  switch (stateOf(value)) {
+    case 'NOT_LOGGED':
+      return `- ${label}: not logged (${reason})`;
+    case 'INSUFFICIENT':
+      return `- ${label}: not computable - ${value.observations} day(s) of data `
+        + `exist but are not enough (${reason})`;
+    case 'UNAVAILABLE':
+      return `- ${label}: not available (${reason})`;
+    default:
+      return `- ${label}: not computable (${reason})`;
+  }
 }
 
 export function generateContextPack(input: ContextInput): ContextPack {

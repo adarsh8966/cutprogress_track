@@ -66,6 +66,7 @@ export function trend(
       inputs,
       `Need at least ${MIN_POINTS_FOR_TREND} measurements in the window to fit a ` +
         `trend; found ${observations.length}.`,
+      observations.length,
     );
   }
 
@@ -87,6 +88,7 @@ export function trend(
       label,
       inputs,
       'Every measurement falls on the same day; a slope is undefined.',
+      observations.length,
     );
   }
 

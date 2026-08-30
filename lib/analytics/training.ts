@@ -228,6 +228,7 @@ export function exercisePerformance(
       'Exercise performance',
       inputs,
       'No working sets logged for this exercise.',
+      0,
     );
   }
 

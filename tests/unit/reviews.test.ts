@@ -96,3 +96,55 @@ describe('monthly review (spec §52)', () => {
     expect(review.value!.totalChangeKg).toBeLessThan(0);
   });
 });
+
+/**
+ * A mean over one logged day and a mean over seven are the same arithmetic and
+ * completely different claims. The review used to report both as "Average
+ * calories" with nothing to tell them apart, so a week with a single logged day
+ * read as a weekly habit.
+ *
+ * The formula is deliberately unchanged - the mean is still taken over the days
+ * that carry data, which is the only honest denominator. What is new is that
+ * the count travels with it, so the page can stop calling one day an average.
+ */
+describe('reviews carry the coverage behind every average', () => {
+  it('reports how many days each weekly average was built from', () => {
+    const review = weeklyReview(days, sets, FIXTURE_PROFILE.targets, FIXTURE_END).value!;
+    expect(review.coverage.days).toBeGreaterThan(0);
+    expect(review.coverage.calories).toBeGreaterThan(0);
+    // Never more days of data than days in the period.
+    expect(review.coverage.calories).toBeLessThanOrEqual(review.coverage.days);
+    expect(review.coverage.protein).toBeLessThanOrEqual(review.coverage.days);
+    expect(review.coverage.steps).toBeLessThanOrEqual(review.coverage.days);
+    expect(review.coverage.weight).toBeLessThanOrEqual(review.coverage.days);
+  });
+
+  it('says ONE when a week holds a single logged day', () => {
+    // The Aug 29 shape: a real value, and a coverage count that stops it being
+    // presented as a week's worth.
+    const week = startOfWeek(FIXTURE_END);
+    const oneDay = days.map((day) =>
+      day.localDate === week ? { ...day, caloriesConsumed: 2050 } : { ...day, caloriesConsumed: null },
+    );
+    const review = weeklyReview(oneDay, sets, FIXTURE_PROFILE.targets, FIXTURE_END).value!;
+    // The value is still reported - the data exists and must not vanish.
+    expect(review.averageCalories).toBe(2050);
+    // ...and it is one day, not a week.
+    expect(review.coverage.calories).toBe(1);
+    expect(review.coverage.days).toBe(7);
+  });
+
+  it('says ZERO for a metric the week never recorded', () => {
+    const none = days.map((day) => ({ ...day, caloriesConsumed: null }));
+    const review = weeklyReview(none, sets, FIXTURE_PROFILE.targets, FIXTURE_END).value!;
+    expect(review.averageCalories).toBeNull();
+    expect(review.coverage.calories).toBe(0);
+  });
+
+  it('reports monthly coverage against the length of the month', () => {
+    const review = monthlyReview(days, sets, FIXTURE_END).value!;
+    expect(review.coverage.days).toBeGreaterThanOrEqual(28);
+    expect(review.coverage.calories).toBeLessThanOrEqual(review.coverage.days);
+    expect(review.coverage.calories).toBe(review.daysLogged);
+  });
+});

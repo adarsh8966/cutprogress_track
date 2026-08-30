@@ -131,8 +131,9 @@ interface Supersedable {
   id: string;
   source: string;
   notes: string | null;
-  superseded_at: string | null;
-  superseded_by: string | null;
+  /** Optional: a database still on migration 0011 has no such column. */
+  superseded_at?: string | null;
+  superseded_by?: string | null;
 }
 
 export interface BodyRow extends Supersedable {
@@ -220,11 +221,11 @@ function base(row: Supersedable): Omit<DayRecord, 'table' | 'title' | 'fields' |
     id: row.id,
     source: row.source as DataSource,
     supersededAt: isoOf(row.superseded_at) || null,
-    supersededBy: row.superseded_by,
+    supersededBy: row.superseded_by ?? null,
     notes: row.notes,
     // A row with a successor was CORRECTED; one without was withdrawn. The two
     // read differently on screen and only the second can be restored.
-    replaced: row.superseded_by !== null,
+    replaced: row.superseded_by != null,
   };
 }
 
@@ -416,14 +417,20 @@ export function canonicalSummary(metrics: DailyMetrics): CanonicalField[] {
   ];
 }
 
-/** The records still counting towards the day. */
+/**
+ * The records still counting towards the day.
+ *
+ * `== null` rather than `=== null`, matching live() in lib/data/canonicalise.ts
+ * and for the same reason: a record whose supersession cannot be read must not
+ * be presented as withdrawn. Erring the other way hides a live observation.
+ */
 export function liveRecords(records: DayRecord[]): DayRecord[] {
-  return records.filter((record) => record.supersededAt === null);
+  return records.filter((record) => record.supersededAt == null);
 }
 
 /** The records on file that no longer count: corrected, or withdrawn. */
 export function supersededRecords(records: DayRecord[]): DayRecord[] {
-  return records.filter((record) => record.supersededAt !== null);
+  return records.filter((record) => record.supersededAt != null);
 }
 
 export type { LocalDate };
