@@ -633,7 +633,9 @@ export function ImportWorkbench({
                             existing {forExisting(verdict, key)}
                           </span>
                         )}
-                        <code className="ml-auto text-[11px] text-ink-faint">
+                        {/* Pasted text is arbitrary: one long unbroken line
+                            would widen the whole page rather than wrap. */}
+                        <code className="ml-auto min-w-0 break-all text-[11px] text-ink-faint">
                           {field?.rawText ?? '—'}
                         </code>
                       </div>
@@ -676,7 +678,9 @@ export function ImportWorkbench({
                         {isWorkout ? 'Workout' : 'Cardio'}
                       </span>
                       <StatusChip status={outcome.status} />
-                      <code className="text-[11px] text-ink-faint">{session.openerRawText}</code>
+                      <code className="min-w-0 break-all text-[11px] text-ink-faint">
+                        {session.openerRawText}
+                      </code>
                       <button
                         type="button"
                         onClick={() => toggleRemoved(sessionTypePath(r, s))}
@@ -848,16 +852,23 @@ export function ImportWorkbench({
                     {(dropped.length > 0 || session.notStored.length > 0) && (
                       <ul className="mt-3 space-y-1 border-t border-line pt-2">
                         {dropped.map((field, i) => (
-                          <li key={`d${i}`} className="text-[11px] leading-snug text-warn">
+                          <li
+                            key={`d${i}`}
+                            className="break-words text-[11px] leading-snug text-warn"
+                          >
                             Not saved: {SESSION_FIELD_LABEL[field.key as SessionFieldKey]} —{' '}
-                            <code>{field.rawText}</code>. A {isWorkout ? 'workout' : 'cardio'}{' '}
+                            <code className="break-all">{field.rawText}</code>. A {isWorkout ? 'workout' : 'cardio'}{' '}
                             session has no column for it
                             {isWorkout ? ' — move it under a Cardio: block' : ''}.
                           </li>
                         ))}
                         {session.notStored.map((entry, i) => (
-                          <li key={`n${i}`} className="text-[11px] leading-snug text-ink-faint">
-                            Not saved: <code>{entry.rawText}</code> — {entry.reason}
+                          <li
+                            key={`n${i}`}
+                            className="break-words text-[11px] leading-snug text-ink-faint"
+                          >
+                            Not saved: <code className="break-all">{entry.rawText}</code>{' '}
+                            — {entry.reason}
                           </li>
                         ))}
                       </ul>
@@ -888,13 +899,19 @@ export function ImportWorkbench({
                   </summary>
                   <ul className="mt-2 space-y-1">
                     {record.unrecognisedLines.map((line, i) => (
-                      <li key={`u${i}`} className="font-mono text-[11px] text-ink-muted">
+                      <li
+                        key={`u${i}`}
+                        className="break-all font-mono text-[11px] text-ink-muted"
+                      >
                         {line}
                       </li>
                     ))}
                     {record.notStored.map((entry, i) => (
-                      <li key={`n${i}`} className="text-[11px] leading-snug text-ink-muted">
-                        <code>{entry.rawText}</code> — {entry.reason}
+                      <li
+                        key={`n${i}`}
+                        className="break-words text-[11px] leading-snug text-ink-muted"
+                      >
+                        <code className="break-all">{entry.rawText}</code> — {entry.reason}
                       </li>
                     ))}
                   </ul>
@@ -1032,7 +1049,9 @@ function ImportReport({ result }: { result: ImportResult }) {
       {result.errors && (
         <ul className="space-y-1 border-t border-line/60 pt-3 text-[11px] text-bad">
           {Object.entries(result.errors).map(([path, message]) => (
-            <li key={path}><code>{path}</code> — {message}</li>
+            <li key={path} className="break-words">
+              <code className="break-all">{path}</code> — {message}
+            </li>
           ))}
         </ul>
       )}

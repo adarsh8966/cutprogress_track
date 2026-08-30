@@ -120,38 +120,49 @@ export default async function SessionPage({
             attach to this session rather than creating a second one.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[380px] text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-                  <th className="pb-2 font-medium">Exercise</th>
-                  <th className="pb-2 font-medium">Load</th>
-                  <th className="pb-2 font-medium">Reps</th>
-                  <th className="pb-2 font-medium">RIR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sets.map((set, i) => (
-                  <tr key={`${set.exerciseId}-${i}`} className="border-b border-line/60 last:border-0">
-                    <td className="py-2 pr-4 text-ink">
-                      {set.exerciseName}
-                      {set.warmup && (
-                        <span className="ml-2 text-[11px] text-ink-faint">warm-up</span>
-                      )}
-                    </td>
-                    <td className="tabular py-2 pr-4">
+          <div>
+            {/* Four columns in a scroller was unreadable at 320px on the page
+                most likely to be open mid-session. Below sm each set is a row
+                of labelled figures; from sm up it is the same grid as before. */}
+            <div className="hidden border-b border-line pb-2 text-[11px] uppercase tracking-[0.12em] text-ink-faint sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-x-4">
+              <span>Exercise</span>
+              <span>Load</span>
+              <span>Reps</span>
+              <span>RIR</span>
+            </div>
+            <ul className="divide-y divide-line/60">
+              {sets.map((set, i) => (
+                <li
+                  key={`${set.exerciseId}-${i}`}
+                  className="py-2.5 sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4"
+                >
+                  <span className="text-sm text-ink">
+                    {set.exerciseName}
+                    {set.warmup && (
+                      <span className="ml-2 text-[11px] text-ink-faint">warm-up</span>
+                    )}
+                  </span>
+                  <span className="mt-1 flex items-baseline gap-4 text-sm sm:mt-0 sm:contents">
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Load</span>
                       {set.weightKg === null
                         ? '—'
                         : `${formatNumber(
                           displayWeight(set.weightKg, profile.weightDisplayUnit), 0,
                         )} ${weightUnit}`}
-                    </td>
-                    <td className="tabular py-2 pr-4">{set.reps ?? '—'}</td>
-                    <td className="tabular py-2">{set.rir ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">Reps</span>
+                      {set.reps ?? '—'}
+                    </span>
+                    <span className="tabular">
+                      <span className="mr-1.5 text-[11px] text-ink-faint sm:hidden">RIR</span>
+                      {set.rir ?? '—'}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </Card>

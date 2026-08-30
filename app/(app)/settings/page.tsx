@@ -50,7 +50,7 @@ export default async function SettingsPage() {
                   <span className="text-[11px] uppercase tracking-wide text-ink-faint">
                     {event.kind.replaceAll('_', ' ').toLowerCase()}
                   </span>
-                  <span className="text-ink">{event.summary}</span>
+                  <span className="min-w-0 break-words text-ink">{event.summary}</span>
                   <span className="ml-auto text-[11px] text-ink-faint">
                     {event.created_at.slice(0, 16).replace('T', ' ')}
                   </span>

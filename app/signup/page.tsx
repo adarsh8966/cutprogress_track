@@ -25,9 +25,12 @@ export default function SignUpPage() {
         {isSupabaseConfigured() ? (
           <>
             <SignUpForm />
-            <p className="mt-6 text-xs text-ink-faint">
+            <p className="mt-4 text-xs text-ink-faint">
               Already have an account?{' '}
-              <Link href="/login" className="text-ink-muted underline hover:text-ink">
+              <Link
+                href="/login"
+                className="inline-flex min-h-11 items-center text-ink-muted underline hover:text-ink"
+              >
                 Sign in
               </Link>
             </p>
