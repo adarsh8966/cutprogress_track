@@ -18,7 +18,7 @@
  * A paste may describe several days. Each is reviewed and confirmed as its own
  * record, and the result panel reports each one separately.
  */
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
   parseImport, confirmImport,
   type ParsePreview, type ImportResult,
@@ -70,6 +70,48 @@ function StatusChip({ status }: { status: ValueStatus }) {
   );
 }
 
+/**
+ * Where an unconfirmed paste is kept between visits.
+ *
+ * Typing a week of data into a textarea and losing it to an accidental back
+ * gesture is the kind of loss that makes a person stop using a tool. The draft
+ * lives in this browser and goes nowhere else: it is not sent anywhere, it is
+ * not a database row, and it is cleared the moment the import is confirmed or
+ * explicitly discarded.
+ *
+ * Only the RAW TEXT is kept, not the review state. The review is derived from
+ * the text by parseImport, and re-deriving it is both cheap and safer than
+ * restoring a half-edited set of values whose verdicts were computed against
+ * what the days held at some earlier moment.
+ */
+const DRAFT_KEY = 'cut-os:import:draft';
+
+function readDraft(): string | null {
+  try {
+    const saved = window.localStorage.getItem(DRAFT_KEY);
+    return saved && saved.trim() !== '' ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(text: string) {
+  try {
+    if (text.trim() === '') window.localStorage.removeItem(DRAFT_KEY);
+    else window.localStorage.setItem(DRAFT_KEY, text);
+  } catch {
+    // A draft is a convenience. Losing it is not worth an error on the page.
+  }
+}
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // As above.
+  }
+}
+
 const SAMPLE = `Date: 2026-08-28
 Weight: 205.4 lb
 Waist: 35.1 in
@@ -112,6 +154,36 @@ export function ImportWorkbench({
   const [edits, setEdits] = useState<EditState>(emptyEdits);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [pending, startTransition] = useTransition();
+  /** True once a saved draft has been put back, so the page can say so. */
+  const [restored, setRestored] = useState(false);
+
+  /**
+   * Restores an unconfirmed paste, after mount rather than in a lazy
+   * initialiser: the server has no localStorage, so initialising from it would
+   * render one thing on the server and another on the client.
+   */
+  useEffect(() => {
+    const draft = readDraft();
+    if (draft === null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount read, see above
+    setRawText(draft);
+    setRestored(true);
+  }, []);
+
+  /** Every keystroke, because the loss this guards against is unannounced. */
+  function updateRawText(text: string) {
+    setRawText(text);
+    setRestored(false);
+    writeDraft(text);
+  }
+
+  function discardDraft() {
+    clearDraft();
+    setRawText('');
+    setRestored(false);
+    setPreview(null);
+    setEdits(emptyEdits());
+  }
 
   const units: DisplayUnits = useMemo(
     () => ({ weight: weightUnit, length: lengthUnit, distance: distanceUnit }),
@@ -305,6 +377,10 @@ export function ImportWorkbench({
         setPreview(null);
         setEdits(emptyEdits());
         setRawText('');
+        setRestored(false);
+        // The paste is now in health_imports, verbatim and permanently. Keeping
+        // a second copy in the browser would only invite importing it twice.
+        clearDraft();
       }
     });
   }
@@ -360,7 +436,7 @@ export function ImportWorkbench({
           </span>
           <textarea
             value={rawText}
-            onChange={(event) => setRawText(event.target.value)}
+            onChange={(event) => updateRawText(event.target.value)}
             rows={12}
             spellCheck={false}
             disabled={pending}
@@ -379,16 +455,34 @@ export function ImportWorkbench({
           </button>
           <button
             type="button"
-            onClick={() => setRawText(SAMPLE)}
+            onClick={() => updateRawText(SAMPLE)}
             disabled={pending}
-            className="text-xs text-ink-faint hover:text-accent disabled:opacity-40"
+            className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-accent disabled:opacity-40"
           >
             Use a sample
           </button>
+          {rawText.trim() !== '' && (
+            <button
+              type="button"
+              onClick={discardDraft}
+              disabled={pending}
+              className="inline-flex min-h-11 items-center text-xs text-ink-faint hover:text-ink-muted disabled:opacity-40"
+            >
+              Clear
+            </button>
+          )}
           <p className="text-[11px] text-ink-faint">
             Several days can be pasted at once. Nothing is saved until you review and confirm.
           </p>
         </div>
+
+        {restored && (
+          <p className="mt-3 rounded border border-accent/40 bg-accent/5 px-3 py-2 text-xs leading-relaxed text-accent">
+            A paste you had not confirmed was restored from this browser. It was never
+            sent anywhere and nothing has been imported from it. Parse it to carry on,
+            or clear it.
+          </p>
+        )}
       </section>
 
       {preview && !hasAnythingToReview && (

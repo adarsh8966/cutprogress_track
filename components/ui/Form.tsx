@@ -146,23 +146,28 @@ export function NumberField({
 }
 
 export function TextField({
-  name, label, error, defaultValue, type = 'text', required, hint,
+  name, label, error, defaultValue, value, onChange, type = 'text', required, hint,
 }: {
   name: string;
   label: string;
   error?: string;
   defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
   type?: string;
   required?: boolean;
   hint?: string;
 }) {
+  const controlled = value !== undefined;
   return (
     <Field label={label} error={error} hint={hint}>
       <input
         type={type}
         name={name}
         required={required}
-        defaultValue={defaultValue}
+        {...(controlled
+          ? { value, onChange: (event) => onChange?.(event.target.value) }
+          : { defaultValue })}
         className={INPUT_CLASS}
       />
     </Field>
