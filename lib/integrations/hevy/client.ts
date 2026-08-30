@@ -231,14 +231,24 @@ export function createHevyClient(options: HevyClientOptions) {
      */
     async listWorkoutEvents(
       params: { since: string; page?: number; pageSize?: number },
-    ): Promise<HevyWorkoutEventsPage> {
+    ): Promise<HevyWorkoutEventsPage & { raw: unknown }> {
       const body = await request('/v1/workouts/events', {
         since: params.since,
         page: Math.max(1, Math.trunc(params.page ?? 1)),
         pageSize: clamp(params.pageSize ?? MAX_PAGE_SIZE.workoutEvents,
           MAX_PAGE_SIZE.workoutEvents),
       });
-      return parse(hevyWorkoutEventsPageSchema, body, 'workout events');
+      // The UNTOUCHED body comes back alongside the parsed page.
+      //
+      // Parsing strips unknown keys, which is right for everything downstream -
+      // a field Hevy adds must not break a sync, and body-shaped keys must not
+      // reach the mapper. But spec §17 is about the other direction: the
+      // original input is kept verbatim and forever, so that a mapping found to
+      // be wrong in six months can be re-derived from what Hevy actually said,
+      // including from a field this version of the code did not know existed.
+      // Storing the parsed object instead would keep only what we already
+      // understood, which is exactly the part that never needs recovering.
+      return { ...parse(hevyWorkoutEventsPageSchema, body, 'workout events'), raw: body };
     },
 
     /**
