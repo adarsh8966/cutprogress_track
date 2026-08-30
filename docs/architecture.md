@@ -5,6 +5,7 @@ Next.js 16 (App Router, React 19, TypeScript strict)
   ├── app/            routes + server actions
   ├── components/     UI, charts, forms
   └── lib/            PURE core - no I/O, no Supabase imports
+        ├── integrations/hevy/   external training, one-way
         ↓
 Supabase
   ├── PostgreSQL      raw observations → canonical daily rows → derived output
@@ -75,6 +76,35 @@ Every server action follows the same four steps:
 Values arrive in the user's display units and are converted to canonical units
 once, at step 1.
 
+## External integrations
+
+`lib/integrations/hevy/` is one more writer into the existing path, not a
+subsystem beside it. It reads Hevy's change feed, normalises, and writes
+`workout_sessions`, `workout_sets`, `exercises` and `health_imports` — the same
+tables the manual logger and the paste importer write — so a synced workout is
+read, resolved and analysed by everything downstream exactly as any other.
+
+```
+Hevy API  →  client.ts   (read-only surface, Zod-validated, injected fetch)
+          →  mapper.ts   (PURE: metres→km, instant→local date, range checks)
+          →  writer.ts   (keyed upserts; supersession, never deletion)
+          →  rebuildDailyMetrics  → the existing canonical layer and readers
+```
+
+Three properties are structural rather than conventional:
+
+- **Read-only.** Every client method is a GET, and the methods that exist are
+  the ones used. There is no method to write back, so a sync loop is not a bug
+  that can be introduced by calling the wrong one.
+- **Training only.** `NormalisedWorkout` has no field for body weight,
+  measurements, steps, heart rate, HRV, sleep or nutrition, so a body value read
+  from a payload is a value with nowhere to go. A source-level test also fails
+  the build if any file in the directory names a health table.
+- **Client-agnostic.** `sync.ts` and `writer.ts` construct no Supabase client;
+  they take whichever one the caller is entitled to use and filter by an
+  explicit `user_id` besides. That is what lets one engine serve both the
+  RLS-backed Sync button and the scheduled route.
+
 ## Auth and RLS
 
 Sessions live in cookies via `@supabase/ssr`, so Server Components, Route
@@ -99,9 +129,17 @@ allowed into a message the user reads. Left unseparated it renders the JSON
 parser's own complaint — `Unexpected token '<', "<!DOCTYPE "...` — as the
 sign-up verdict whenever the endpoint answers with an HTML document.
 
-The service-role key is not used anywhere in the application. It has a
-commented-out slot in `.env.example` for a future Edge Function, with a warning
-attached.
+The service-role key is used in exactly one place, and only when the optional
+scheduled sync is configured: `app/api/hevy/sync/route.ts`. A cron request
+carries no cookie session, so there is no user for RLS to key on — the route
+authenticates itself with `CRON_SECRET` (compared in constant time), names the
+account with `CUT_OS_OWNER_USER_ID`, and every query downstream filters by that
+id explicitly, because RLS is not there to catch a mistake on that path.
+
+`lib/supabase/admin.ts` is a **single-caller module**: exactly one file may
+import it, and `tests/unit/admin-client-containment.test.ts` fails the build if
+a second one does. With the variables unset the route answers 503 and changes
+nothing, and the Sync button works entirely under RLS without touching it.
 
 ## Environment handling
 

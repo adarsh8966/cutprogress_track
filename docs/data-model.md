@@ -14,7 +14,7 @@ by a named source.
 | `nutrition_logs` / `nutrition_items` | per-day macros; optional per-food detail |
 | `sleep_records` | duration, score |
 | `cardio_sessions` | type, duration, distance, average and maximum HR, HR zone, calories |
-| `workout_sessions` / `workout_sets` | sessions with duration, average and maximum HR and calories; set-level data |
+| `workout_sessions` / `workout_sets` | sessions with title, duration, average and maximum HR and calories; set-level data with exercise order, notes, RPE and set type |
 | `health_imports` | the original pasted text, verbatim and forever |
 
 These are never updated and never deleted. That is enforced in `0008_rls.sql` by
@@ -39,6 +39,37 @@ keeps every value it recorded.
 granted **per column** — `superseded_at` and `superseded_by` only — so a
 `duration_minutes` rewrite is refused outright by Postgres. RLS and the column
 grant are both required, and both are tested.
+
+**External identity** (`0014`). `workout_sessions` and `exercises` carry
+`external_source` / `external_id`, with a partial UNIQUE index on each. On
+sessions that index IS the idempotency guarantee: at most one CUT OS session can
+ever exist per Hevy workout, so re-syncing updates the row that is there and the
+58 + 65 = 123 arithmetic `0011` exists to prevent is unreachable on that path.
+On exercises it makes "have I seen this movement before?" a lookup rather than a
+search — and permanent, so renaming an exercise at the source cannot fork it.
+
+`workout_sets` gained the same supersession pair (`0014`): a set removed at the
+source is marked, not deleted, and one that comes back is restored rather than
+duplicated. Both rules are read in `joinLoggedSets` (`lib/data/rows.ts`), which
+also excludes the sets of a **withdrawn session** — a session's withdrawal is
+not recorded on each of its sets, so the sets have to be excluded by their
+parent.
+
+`exercises` can now be written by a signed-in user, but only barely: the insert
+policy requires `external_source is not null`, so an exercise can be created
+from an external source and the seeded catalog cannot be added to by hand. The
+update privilege is granted on `external_source` / `external_id` **alone**, so
+an existing catalog row can be *adopted* (linked to its Hevy template) while its
+name, muscle group and equipment stay exactly as the seed wrote them. RLS on
+this table is deliberately **not** forced: `0009` is an upsert run by the
+migration owner, and forcing it would subject every future re-seed to the policy
+above.
+
+`sync_runs` records one row per synchronisation attempt — status, times, counts,
+warnings, error and cursor. Never deleted (the privilege is withheld outright, a
+step stronger than the observation tables' missing policy), and a partial unique
+index refuses a second `RUNNING` row per provider, so the Sync button pressed
+mid-schedule is turned away by the database rather than racing it.
 
 ## Canonical
 
@@ -106,7 +137,16 @@ tomorrow.
 ## Idempotency
 
 `health_imports.idempotency_key` is `UNIQUE (user_id, key)`, where the key is
-SHA-256 over the normalised paste text plus the target date. Normalisation
+SHA-256 over the normalised paste text plus the target date.
+
+**For an external record the key is different, because the record has an
+identity of its own**: `sha256(source:externalId:updatedAt)`. That one fact does
+three jobs, all enforced by the same constraint — an unchanged workout is
+refused (which is what makes re-syncing free), an edited one gets through
+because its version differs, and every version that ever arrived keeps its own
+row, so `health_imports` is the workout's history and not only its latest state.
+The row holds the provider's response body verbatim (§17), before parsing
+dropped anything the schema did not model. Normalisation
 ignores whitespace, case and blank lines — so a re-copied report is recognised —
 but not digits, so a genuinely edited value imports as new data.
 
