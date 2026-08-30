@@ -40,7 +40,9 @@ function pick(days: DailyMetrics[], key: keyof DailyMetrics): DatedValue[] {
 }
 
 export default async function DashboardPage() {
-  const { profile: loaded, start: windowStart, end, metrics } = await getAnalyticsWindow();
+  const {
+    profile: loaded, start: windowStart, end, metrics, sessions: trainingSessions, sets,
+  } = await getAnalyticsWindow();
   const profile = loaded ?? DEFAULT_PROFILE;
 
   if (metrics.length === 0) {
@@ -105,6 +107,25 @@ export default async function DashboardPage() {
   const start = profile.startingWeightKg;
   const target = profile.targetWeightKg;
   const averageSleep = mean(presentValues(trailingWindow(sleep, end, 28).map((p) => p.value)));
+
+  /**
+   * Today's sessions, and what was logged inside them.
+   *
+   * Working sets only, and an average RPE only where RPE was actually recorded
+   * - a session logged without it reports the minutes and stops, rather than
+   * showing a figure derived from nothing.
+   */
+  const todayTraining = trainingSessions.filter((s) => s.date === end && s.completed);
+  const setsToday = new Map<string, number>();
+  const rpeToday = new Map<string, number>();
+  for (const session of todayTraining) {
+    const own = sets.filter((set) => set.sessionId === session.id && !set.warmup);
+    if (own.length > 0) setsToday.set(session.id, own.length);
+    const rpe = own.map((set) => set.rpe).filter((v): v is number => v !== null);
+    if (rpe.length > 0) {
+      rpeToday.set(session.id, rpe.reduce((a, b) => a + b, 0) / rpe.length);
+    }
+  }
 
   const recommendations = generateRecommendations({
     date: end,
@@ -377,6 +398,13 @@ export default async function DashboardPage() {
           </div>
         </Card>
 
+        {/*
+          TODAY'S TRAINING, on the card that already answers "am I training?".
+          Not a fourth section (§50): the 28-day adherence figure says whether
+          the habit is holding, and a line under it says what happened today,
+          which is the question you actually open this page with after a
+          session. Absent when there is none - a rest day is not a gap.
+        */}
         <Card title="Training">
           <DerivedFigure
             derived={adherence.training}
@@ -384,6 +412,34 @@ export default async function DashboardPage() {
             unit="%"
             sub={<span className="text-ink-faint">adherence, last 28 days</span>}
           />
+          {todayTraining.length > 0 && (
+            <ul className="mt-3 space-y-1 border-t border-line pt-3">
+              {todayTraining.map((session) => (
+                <li key={session.id} className="text-sm">
+                  <Link
+                    href={`/training/${session.id}`}
+                    className="text-ink transition-colors hover:text-accent"
+                  >
+                    {session.title
+                      ?? session.sessionType.replaceAll('_', ' ').toLowerCase()}
+                  </Link>
+                  <span className="ml-2 tabular text-xs text-ink-faint">
+                    {[
+                      session.durationMinutes === null
+                        ? null
+                        : `${formatNumber(session.durationMinutes, 0)} min`,
+                      setsToday.get(session.id)
+                        ? `${setsToday.get(session.id)} sets`
+                        : null,
+                      rpeToday.get(session.id) === undefined
+                        ? null
+                        : `avg RPE ${formatNumber(rpeToday.get(session.id)!, 1)}`,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           <Evidence derived={adherence.training} />
         </Card>
       </div>

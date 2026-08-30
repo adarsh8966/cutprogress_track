@@ -10,6 +10,9 @@ produces a **Context Pack** you paste into ChatGPT for interpretation.
 ## What it does
 
 - Tracks weight, waist, nutrition, steps, cardio, sleep and resistance training.
+- Syncs resistance training from **Hevy** through its official API: workouts,
+  exercises, sets, reps, load, RPE and notes, with new exercises added
+  automatically. One-way and read-only; nothing is ever written back.
 - Imports pasted summaries from Bevel, Google Health or your own notes - one day
   or a whole week at a time, including training and cardio sessions - with a
   mandatory review step before anything is stored.
@@ -87,12 +90,43 @@ Sign in, then set your height, targets and timezone in Settings. The timezone
 matters: every daily rollup uses it, so a workout logged at 11:30 PM lands on
 the right day.
 
+## Connecting Hevy (optional)
+
+Training comes in automatically if you use Hevy.
+
+1. Get your API key at hevy.com/settings?developer. **The API is a Hevy Pro
+   feature.**
+2. Put it in `.env.local` as `HEVY_API_KEY`, and in your deployment's
+   environment variables. Never prefix it `NEXT_PUBLIC_`.
+3. Open `/import`, press **Test connection**, then **Sync Hevy**.
+
+The first sync reads your whole history; after that it asks Hevy only what has
+changed. Syncing repeatedly is free and cannot duplicate anything — the
+guarantee is a database constraint, not a check in the code.
+
+**Hevy is the source for training and nothing else.** It never writes body
+weight, measurements, steps, heart rate, HRV, sleep or nutrition, even though
+its API exposes some of those. That is enforced by the shape of the code: the
+client has no method for them and the mapper's output type has no field for
+them, both asserted by tests.
+
+**Syncing is manual, on purpose.** There is no schedule and no background job:
+press **Sync Hevy** on `/import` when you finish training and the workout is in
+by the time you have put your shoes away. Pressing it again costs nothing.
+
+That also means the app needs no privileged database access. A scheduled job
+would arrive with no signed-in user for row-level security to key on, and the
+only way to give it one is a key that bypasses those policies entirely. A button
+runs inside your own session, so it does not need one — and there is none
+anywhere in the codebase.
+
 ## Daily use
 
-- **During the day** — log in Bevel / Health / your training app as usual.
-- **At night** — paste the day's summary into Import, review what the parser
-  found, correct anything wrong, and confirm. Several days can go in at once;
-  each is reviewed and imported as its own record.
+- **During the day** — train in Hevy, and log in Bevel / Health as usual.
+- **At night** — press Sync on Import for training, and paste the day's summary
+  for everything else: review what the parser found, correct anything wrong, and
+  confirm. Several days can go in at once; each is reviewed and imported as its
+  own record.
 - **Weekly** — open Review, then Context, generate a pack, and paste it into
   your ChatGPT project.
 
@@ -130,9 +164,16 @@ Stated plainly so nothing here implies more than exists:
 - **Health Connect** — planned for a later version. It needs Android
   permissions and a Play Store health-data declaration. Not built, not tested,
   not claimed.
-- **Bevel API** — there is no integration and no credentials are stored. Bevel
-  data arrives by copy and paste. If Bevel publishes an official API, that is
-  the point to build one.
+- **Bevel API** — there is no integration. Bevel data arrives by copy and paste.
+  Bevel publishes no official API, and scraping one would mean holding an
+  account credential for a service that never offered it. Hevy is integrated
+  precisely because it does offer one.
+- **Writing back to Hevy** — deliberately not built. The integration is one-way:
+  Hevy → CUT OS. A correction made here never leaves for Hevy, which keeps
+  ownership clear and makes a sync loop impossible.
+- **Rest time between sets** — Hevy's workout payload does not carry it. Its
+  routines carry a *planned* rest, which is a different measurement, and it is
+  not imported as though it were the rest actually taken.
 - **Trained ML models** — deliberately absent. The analytics are deterministic
   statistics, which is where nearly all the value is at this data volume. See
   `docs/ml.md` for the roadmap and the thresholds a model has to clear before
@@ -157,6 +198,11 @@ model, and every analytics formula written out.
 
 - Row-level security on every user-owned table, keyed to `auth.uid()`.
 - No photos of any kind — no upload path, no storage, no computer vision.
-- No third-party credentials stored anywhere.
+- **No third-party credential is stored in the database.** The one credential
+  this app holds — a Hevy API key, issued by Hevy for its own public API — lives
+  in a server-side environment variable, is read only by a `server-only` module,
+  and is never returned to the browser, written to a table, or included in a log
+  line or an error message. A database backup carries no key to any account.
+- No password or scraped session for any other service, ever.
 - The service-role key is never used in client code and never in a
   `NEXT_PUBLIC_` variable.

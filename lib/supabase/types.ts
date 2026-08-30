@@ -21,7 +21,7 @@
  */
 
 export type DataSourceEnum =
-  | 'MANUAL' | 'HEALTH_CONNECT' | 'GOOGLE_HEALTH' | 'BEVEL'
+  | 'MANUAL' | 'HEVY' | 'HEALTH_CONNECT' | 'GOOGLE_HEALTH' | 'BEVEL'
   | 'IMPORT_TEXT' | 'ESTIMATED' | 'OTHER';
 export type PhaseEnum = 'CUT' | 'MAINTENANCE' | 'REVERSE_DIET' | 'LEAN_GAIN';
 export type ConfidenceEnum = 'HIGH' | 'MODERATE' | 'LOW';
@@ -185,6 +185,10 @@ export type ExerciseRow = {
   demonstration_url: string | null;
   active: boolean;
   apartment_gym: boolean;
+  /** The system this exercise was created from or adopted by (0014). */
+  external_source: string | null;
+  /** That system's stable template id. UNIQUE with external_source. */
+  external_id: string | null;
 }
 
 export type WorkoutSessionRow = {
@@ -206,6 +210,11 @@ export type WorkoutSessionRow = {
   /** Set when a corrected import replaced this row. NULL means live (0011). */
   superseded_at: string | null;
   superseded_by: string | null;
+  /** The name the source gave this workout. session_type stays the enum (0014). */
+  title: string | null;
+  external_source: string | null;
+  external_id: string | null;
+  external_updated_at: string | null;
 }
 
 export type WorkoutSetRow = {
@@ -223,6 +232,42 @@ export type WorkoutSetRow = {
   warmup: boolean;
   to_failure: boolean;
   notes: string | null;
+  /** Which exercise block of the workout this set belongs to, 0-based (0014). */
+  exercise_index: number | null;
+  /** The note on the EXERCISE, carried on each of its sets. */
+  exercise_notes: string | null;
+  superset_id: number | null;
+  /** The source's own word for this set, verbatim and uninterpreted. */
+  set_type: string | null;
+  distance_km: number | null;
+  duration_seconds: number | null;
+  /** A set removed at the source stops counting without being deleted (0014). */
+  superseded_at: string | null;
+  superseded_by: string | null;
+}
+
+/** One synchronisation attempt with an external provider (0014). */
+export type SyncRunRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  provider: string;
+  triggered_by: 'MANUAL' | 'SCHEDULED';
+  started_at: string;
+  finished_at: string | null;
+  status: 'RUNNING' | 'SUCCEEDED' | 'PARTIAL' | 'FAILED';
+  events_found: number;
+  workouts_created: number;
+  workouts_updated: number;
+  workouts_unchanged: number;
+  workouts_deleted: number;
+  exercises_created: number;
+  exercises_matched: number;
+  records_failed: number;
+  warnings: string[];
+  error: string | null;
+  cursor_before: string | null;
+  cursor_after: string | null;
 }
 
 export type DailyMetricsRow = {
@@ -340,6 +385,23 @@ type SessionDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
 /** The same, for the scalar observation tables since migration 0012. */
 type ObservationDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
 
+/**
+ * And for workout_sets since 0014. A set is always inserted live and always
+ * inserted with an identity of its own; marking one superseded is a later,
+ * separate write, so an "already removed" set cannot be created.
+ */
+type SetDefaults = 'id' | 'created_at' | 'superseded_at' | 'superseded_by';
+
+/**
+ * A sync run is INSERTed as started and UPDATEd as finished, so everything the
+ * run goes on to count is optional at insert time.
+ */
+type SyncRunDefaults =
+  | 'id' | 'created_at' | 'started_at' | 'finished_at' | 'status' | 'triggered_by'
+  | 'events_found' | 'workouts_created' | 'workouts_updated' | 'workouts_unchanged'
+  | 'workouts_deleted' | 'exercises_created' | 'exercises_matched' | 'records_failed'
+  | 'warnings' | 'error' | 'cursor_before' | 'cursor_after';
+
 type TableDef<Row, Insert = Row, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -371,7 +433,8 @@ export type Database = {
       workout_sessions: TableDef<
         WorkoutSessionRow, Insertable<WorkoutSessionRow, SessionDefaults>
       >;
-      workout_sets: TableDef<WorkoutSetRow, Insertable<WorkoutSetRow, 'id' | 'created_at'>>;
+      workout_sets: TableDef<WorkoutSetRow, Insertable<WorkoutSetRow, SetDefaults>>;
+      sync_runs: TableDef<SyncRunRow, Insertable<SyncRunRow, SyncRunDefaults>>;
       daily_metrics: TableDef<DailyMetricsRow, Insertable<DailyMetricsRow, ServerDefaults>>;
       health_imports: TableDef<
         HealthImportRow, Insertable<HealthImportRow, 'id' | 'created_at'>

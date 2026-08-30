@@ -5,6 +5,7 @@ Next.js 16 (App Router, React 19, TypeScript strict)
   ├── app/            routes + server actions
   ├── components/     UI, charts, forms
   └── lib/            PURE core - no I/O, no Supabase imports
+        ├── integrations/hevy/   external training, one-way
         ↓
 Supabase
   ├── PostgreSQL      raw observations → canonical daily rows → derived output
@@ -75,6 +76,35 @@ Every server action follows the same four steps:
 Values arrive in the user's display units and are converted to canonical units
 once, at step 1.
 
+## External integrations
+
+`lib/integrations/hevy/` is one more writer into the existing path, not a
+subsystem beside it. It reads Hevy's change feed, normalises, and writes
+`workout_sessions`, `workout_sets`, `exercises` and `health_imports` — the same
+tables the manual logger and the paste importer write — so a synced workout is
+read, resolved and analysed by everything downstream exactly as any other.
+
+```
+Hevy API  →  client.ts   (read-only surface, Zod-validated, injected fetch)
+          →  mapper.ts   (PURE: metres→km, instant→local date, range checks)
+          →  writer.ts   (keyed upserts; supersession, never deletion)
+          →  rebuildDailyMetrics  → the existing canonical layer and readers
+```
+
+Three properties are structural rather than conventional:
+
+- **Read-only.** Every client method is a GET, and the methods that exist are
+  the ones used. There is no method to write back, so a sync loop is not a bug
+  that can be introduced by calling the wrong one.
+- **Training only.** `NormalisedWorkout` has no field for body weight,
+  measurements, steps, heart rate, HRV, sleep or nutrition, so a body value read
+  from a payload is a value with nowhere to go. A source-level test also fails
+  the build if any file in the directory names a health table.
+- **Client-agnostic.** `sync.ts` and `writer.ts` construct no Supabase client;
+  they take the one their caller is entitled to use and filter by an explicit
+  `user_id` besides. Today the only caller is the Sync button, which runs as the
+  signed-in user under RLS.
+
 ## Auth and RLS
 
 Sessions live in cookies via `@supabase/ssr`, so Server Components, Route
@@ -102,6 +132,14 @@ sign-up verdict whenever the endpoint answers with an HTML document.
 The service-role key is not used anywhere in the application. It has a
 commented-out slot in `.env.example` for a future Edge Function, with a warning
 attached.
+
+That is a consequence of syncing being a button rather than a schedule. A cron
+request carries no cookie session, so it has no user for RLS to key on, and the
+only way to give one write access is a key that bypasses every policy. A button
+runs inside the user's own session and needs nothing of the sort.
+`tests/unit/service-role-absence.test.ts` holds the line: no file reads that
+key, and only `lib/supabase/client.ts`, `lib/supabase/server.ts`, `middleware.ts`
+and `app/auth/confirm/route.ts` may construct a Supabase client at all.
 
 ## Environment handling
 

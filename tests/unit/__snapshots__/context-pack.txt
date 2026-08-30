@@ -2,7 +2,7 @@
 FITNESS CONTEXT PACK
 ====================================================
 Generated: 2026-11-20
-Context version: 1.2
+Context version: 1.3
 Analytics version: 0.1.0
 
 PURPOSE:
@@ -149,6 +149,20 @@ Back          15    5
 Chest         15    5
 Shoulders     15    5
 Quadriceps    15    5
+
+- Sessions per week (12 weeks): 1.67
+- Average session length: 60.7 min
+- Average RPE (12 weeks): 8
+- Weeks with no session: 7 of 12
+
+Personal records (from logged working sets):
+Exercise             Heaviest (lb)  On          Most reps  Best e1RM (lb)
+-------------------  -------------  ----------  ---------  --------------
+Smith Machine Squat  170.9          2026-11-15  12         239.2
+Machine Chest Press  115.7          2026-11-14  12         162.0
+Cable Row            86.5           2026-11-17  12         118.2
+Cable Lateral Raise  30.9           2026-11-08  12         42.1
+  Note: e1RM is estimated from a working set with the Epley formula, not a tested max. A record keeps the date it was first reached.
 
 RECOVERY
 ----------------------------------------------------

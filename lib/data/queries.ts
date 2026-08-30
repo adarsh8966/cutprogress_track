@@ -10,13 +10,19 @@ import 'server-only';
  * about.
  */
 import type { DailyMetrics, LocalDate, UserProfile } from '@/lib/types';
-import { rowToProfile, rowToDailyMetrics, rowsToDailyMetrics } from '@/lib/data/rows';
+import {
+  rowToProfile, rowToDailyMetrics, rowsToDailyMetrics,
+  joinLoggedSets, rowToTrainingSession, rowToExercise,
+} from '@/lib/data/rows';
 import type { LoggedSet, TrainingSession } from '@/lib/analytics/training';
 import { createServerComponentClient } from '@/lib/supabase/server';
 import { addDays, localToday } from '@/lib/normalization/dates';
 import { toNumber } from '@/lib/normalization/numbers';
-import type { ContextExportRow, SystemEventRow } from '@/lib/supabase/types';
+import type {
+  ContextExportRow, SystemEventRow, SyncRunRow, ExerciseRow,
+} from '@/lib/supabase/types';
 import { toDayRecords, type DayRecord } from '@/lib/data/dayRecords';
+import { apartmentGymExercises, type Exercise } from '@/lib/health/catalog';
 import type { ProvenanceMap } from '@/lib/normalization/canonical';
 
 // Defined in lib/normalization so the canonical resolver can use it too, and
@@ -51,55 +57,50 @@ export async function getDailyMetrics(
   return rowsToDailyMetrics(data);
 }
 
+/**
+ * Every set performed in the window, joined to its session and exercise.
+ *
+ * THREE PLAIN READS, NOT ONE CLEVER ONE. This was a single PostgREST select
+ * with an embedded `workout_sessions!inner(local_date)` join, which could
+ * express "sets whose session falls in this window" and could NOT express
+ * "...and whose session was not withdrawn". So it did not: a corrected session
+ * kept contributing its sets to volume, e1RM and every muscle-group total, on
+ * every page, with nothing on screen saying so.
+ *
+ * The filtering that matters now lives in joinLoggedSets(), which is pure and
+ * driven directly by tests. Three round trips instead of one is the price, and
+ * over a ninety-day window of one person's training that is not a price worth
+ * paying a rule no test can reach to avoid.
+ *
+ * A FAILED READ IS NOT AN EMPTY WINDOW - but this function has always returned
+ * [] on error, as every reader in this file does, and changing that contract
+ * belongs with changing all of them rather than with this fix.
+ */
 export async function getLoggedSets(from: LocalDate, to: LocalDate): Promise<LoggedSet[]> {
   const supabase = await createServerComponentClient();
-  const { data, error } = await supabase
+
+  const sessions = await supabase
+    .from('workout_sessions')
+    .select('id, local_date, superseded_at')
+    .is('superseded_at', null)
+    .gte('local_date', from)
+    .lte('local_date', to);
+  if (sessions.error || !sessions.data || sessions.data.length === 0) return [];
+
+  const sets = await supabase
     .from('workout_sets')
-    .select(
-      'id, set_number, weight_kg, reps, rir, rpe, warmup, session_id, exercise_id, ' +
-        'workout_sessions!inner(local_date), exercises!inner(name, primary_muscle_group)',
-    )
-    .gte('workout_sessions.local_date', from)
-    .lte('workout_sessions.local_date', to);
+    .select('*')
+    .in('session_id', sessions.data.map((row) => row.id))
+    .is('superseded_at', null);
+  if (sets.error || !sets.data || sets.data.length === 0) return [];
 
-  if (error || !data) return [];
-  return mapLoggedSets(data);
-}
+  const exercises = await supabase
+    .from('exercises')
+    .select('exercise_id, name, primary_muscle_group')
+    .in('exercise_id', [...new Set(sets.data.map((row) => row.exercise_id))]);
+  if (exercises.error || !exercises.data) return [];
 
-type JoinedSet = {
-  session_id: string;
-  exercise_id: string;
-  weight_kg: number | null;
-  reps: number | null;
-  rir: number | null;
-  rpe: number | null;
-  warmup: boolean;
-  workout_sessions: { local_date: string } | { local_date: string }[];
-  exercises:
-    | { name: string; primary_muscle_group: string }
-    | { name: string; primary_muscle_group: string }[];
-};
-
-/** PostgREST returns an embedded row as an object or a one-element array. */
-function mapLoggedSets(data: unknown): LoggedSet[] {
-  return (data as JoinedSet[]).map((row) => {
-    const session = Array.isArray(row.workout_sessions)
-      ? row.workout_sessions[0]!
-      : row.workout_sessions;
-    const exercise = Array.isArray(row.exercises) ? row.exercises[0]! : row.exercises;
-    return {
-      date: session.local_date,
-      sessionId: row.session_id,
-      exerciseId: row.exercise_id,
-      exerciseName: exercise.name,
-      primaryMuscleGroup: exercise.primary_muscle_group,
-      weightKg: toNumber(row.weight_kg),
-      reps: toNumber(row.reps),
-      rir: toNumber(row.rir),
-      rpe: toNumber(row.rpe),
-      warmup: row.warmup,
-    };
-  });
+  return joinLoggedSets(sessions.data, sets.data, exercises.data);
 }
 
 /**
@@ -137,19 +138,7 @@ export async function getWorkoutSessions(
     .order('local_date', { ascending: false });
 
   if (error || !data) return [];
-  return data.map((row) => ({
-    id: row.id,
-    date: row.local_date,
-    sessionType: row.session_type as string,
-    durationMinutes: toNumber(row.duration_minutes),
-    averageHeartRate: toNumber(row.average_heart_rate),
-    maxHeartRate: toNumber(row.max_heart_rate),
-    calories: toNumber(row.calories),
-    notes: row.notes,
-    source: row.source as string,
-    completed: row.completed,
-    importId: row.import_id,
-  }));
+  return data.map(rowToTrainingSession);
 }
 
 /** One session by id, for the detail page. Null when it is not the user's. */
@@ -162,35 +151,41 @@ export async function getWorkoutSession(id: string): Promise<TrainingSession | n
     .maybeSingle();
 
   if (error || !data) return null;
-  return {
-    id: data.id,
-    date: data.local_date,
-    sessionType: data.session_type as string,
-    durationMinutes: toNumber(data.duration_minutes),
-    averageHeartRate: toNumber(data.average_heart_rate),
-    maxHeartRate: toNumber(data.max_heart_rate),
-    calories: toNumber(data.calories),
-    notes: data.notes,
-    source: data.source as string,
-    completed: data.completed,
-    importId: data.import_id,
-  };
+  return rowToTrainingSession(data);
 }
 
-/** Every set belonging to one session, for the detail page. */
+/**
+ * Every live set belonging to one session, for the detail page.
+ *
+ * Ordering is left to joinLoggedSets(), which sorts by exercise block and then
+ * set number - the order the workout was actually performed in. Sorting by
+ * set_number alone interleaved the exercises of a workout that recorded more
+ * than one, because set numbers restart per exercise.
+ */
 export async function getSetsForSession(sessionId: string): Promise<LoggedSet[]> {
   const supabase = await createServerComponentClient();
-  const { data, error } = await supabase
-    .from('workout_sets')
-    .select(
-      'id, set_number, weight_kg, reps, rir, rpe, warmup, session_id, exercise_id, ' +
-        'workout_sessions!inner(local_date), exercises!inner(name, primary_muscle_group)',
-    )
-    .eq('session_id', sessionId)
-    .order('set_number', { ascending: true });
 
-  if (error || !data) return [];
-  return mapLoggedSets(data);
+  const session = await supabase
+    .from('workout_sessions')
+    .select('id, local_date, superseded_at')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (session.error || !session.data) return [];
+
+  const sets = await supabase
+    .from('workout_sets')
+    .select('*')
+    .eq('session_id', sessionId)
+    .is('superseded_at', null);
+  if (sets.error || !sets.data || sets.data.length === 0) return [];
+
+  const exercises = await supabase
+    .from('exercises')
+    .select('exercise_id, name, primary_muscle_group')
+    .in('exercise_id', [...new Set(sets.data.map((row) => row.exercise_id))]);
+  if (exercises.error || !exercises.data) return [];
+
+  return joinLoggedSets([session.data], sets.data, exercises.data);
 }
 
 export async function getCardioSessions(from: LocalDate, to: LocalDate) {
@@ -226,10 +221,66 @@ export async function getRecentImports(limit = 20) {
   const supabase = await createServerComponentClient();
   const { data } = await supabase
     .from('health_imports')
-    .select('id, created_at, status, target_local_date, parser_version, raw_text')
+    // `source` distinguishes a paste from a synced payload, so the list can say
+    // where a row came from instead of previewing a JSON blob as if it were text.
+    .select('id, created_at, status, target_local_date, parser_version, raw_text, source')
     .order('created_at', { ascending: false })
     .limit(limit);
   return data ?? [];
+}
+
+/**
+ * The exercise library as the DATABASE holds it, not as the JSON catalog
+ * describes it.
+ *
+ * These are not the same list any more. data/exercises/catalog.json is the SEED
+ * (lib/health/catalog.ts reads it, 0009 loads it), and since 0014 an exercise
+ * can also be created by a sync when it is used at the source and absent here.
+ * A picker reading the JSON would offer 118 exercises while the user's own
+ * history contained others - present in every chart, unfindable in the one
+ * control meant for choosing them.
+ */
+export async function getExercises(): Promise<ExerciseRow[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('active', true)
+    .order('name', { ascending: true });
+  if (error || !data) return [];
+  return data;
+}
+
+/**
+ * The exercises a picker should offer.
+ *
+ * Reads the database and falls back to the JSON catalog if that read comes back
+ * empty. The fallback is not defensive noise: the catalog is the SEED of this
+ * table, so it can never offer something wrong - only something incomplete -
+ * and an empty picker on a page whose whole purpose is choosing an exercise is
+ * a worse failure than a picker missing the handful a sync added.
+ *
+ * The apartment-gym filter is kept. An exercise a sync created is marked
+ * performable because the user demonstrably performed it, which is an
+ * observation rather than an inference - so it passes this filter honestly.
+ */
+export async function getExerciseLibrary(): Promise<Exercise[]> {
+  const rows = await getExercises();
+  const library = rows.map(rowToExercise).filter((exercise) => exercise.apartmentGym);
+  return library.length > 0 ? library : apartmentGymExercises();
+}
+
+/** Synchronisation history for a provider, newest first (spec §41). */
+export async function getSyncRuns(provider: string, limit = 10): Promise<SyncRunRow[]> {
+  const supabase = await createServerComponentClient();
+  const { data, error } = await supabase
+    .from('sync_runs')
+    .select('*')
+    .eq('provider', provider)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return data;
 }
 
 export async function getSystemEvents(limit = 30): Promise<SystemEventRow[]> {

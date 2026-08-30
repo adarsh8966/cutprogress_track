@@ -21,11 +21,28 @@ export interface LoggedSet {
   exerciseId: string;
   exerciseName: string;
   primaryMuscleGroup: string;
+  setNumber: number;
   weightKg: number | null;
   reps: number | null;
   rir: number | null;
   rpe: number | null;
   warmup: boolean;
+  /**
+   * Which exercise block of the workout this set belongs to, as the source
+   * ordered it. NULL when the source did not say - a set logged by hand has no
+   * position beyond the order it was entered in.
+   */
+  exerciseIndex: number | null;
+  /** The note on the EXERCISE, repeated on each of its sets. */
+  exerciseNotes: string | null;
+  /**
+   * The source's own word for this set, verbatim. Nothing but the exact string
+   * "warmup" is read into meaning; see the mapper.
+   */
+  setType: string | null;
+  supersetId: number | null;
+  distanceKm: number | null;
+  durationSeconds: number | null;
 }
 
 /**
@@ -45,6 +62,14 @@ export interface TrainingSession {
   id: string;
   date: LocalDate;
   sessionType: string;
+  /**
+   * The name the source gave this workout ("Push Day"). NULL when it had none.
+   * sessionType is still the closed vocabulary analytics group by; this is the
+   * label, and a label that maps to nothing is kept whole rather than lost.
+   */
+  title: string | null;
+  /** The system this session came from, e.g. HEVY. NULL when recorded here. */
+  externalSource: string | null;
   durationMinutes: number | null;
   averageHeartRate: number | null;
   maxHeartRate: number | null;
@@ -178,6 +203,59 @@ export function summariseSessions(
     completed.length > 0 ? 'HIGH' : 'INSUFFICIENT',
     completed.length === 0 ? ['No training sessions recorded in this period.'] : notes,
   );
+}
+
+/**
+ * One exercise as it was performed inside a workout.
+ *
+ * A workout is not a flat list of sets, and rendering it as one repeats the
+ * exercise name on every row and has nowhere to put the note that belongs to
+ * the exercise rather than to any one set.
+ *
+ * The key includes the POSITION, not only the exercise, so a workout that
+ * benched at position 0 and again at position 5 shows two blocks - which is
+ * what happened. Merging them would report five straight sets of something the
+ * user did as two separate pieces of work.
+ *
+ * Sets logged by hand have no position; they group under their exercise and
+ * sort last, which is the order they were entered in.
+ */
+export interface ExerciseBlock {
+  key: string;
+  exerciseId: string;
+  exerciseName: string;
+  /** Position within the workout, as the source ordered it. */
+  index: number | null;
+  /** The note on the exercise. Carried on every set; shown once. */
+  notes: string | null;
+  sets: LoggedSet[];
+}
+
+export function groupByExercise(sets: LoggedSet[]): ExerciseBlock[] {
+  const blocks = new Map<string, ExerciseBlock>();
+
+  for (const set of sets) {
+    const key = `${set.exerciseIndex ?? 'unpositioned'}#${set.exerciseId}`;
+    const block = blocks.get(key) ?? {
+      key,
+      exerciseId: set.exerciseId,
+      exerciseName: set.exerciseName,
+      index: set.exerciseIndex,
+      notes: set.exerciseNotes,
+      sets: [],
+    };
+    // The first note wins, and any set of the block carries the same one.
+    block.notes = block.notes ?? set.exerciseNotes;
+    block.sets.push(set);
+    blocks.set(key, block);
+  }
+
+  return [...blocks.values()].sort((a, b) => {
+    const ai = a.index ?? Number.MAX_SAFE_INTEGER;
+    const bi = b.index ?? Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return a.exerciseName.localeCompare(b.exerciseName);
+  });
 }
 
 export function epley1rm(weightKg: number, reps: number): number {

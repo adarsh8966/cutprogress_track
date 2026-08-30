@@ -9,12 +9,12 @@
  * it, while `sets` comes from workout_sets. Reading only the second is what
  * made an imported summary workout invisible on this page.
  */
-import { getAnalyticsWindow } from '@/lib/data/queries';
+import { getAnalyticsWindow, getExerciseLibrary } from '@/lib/data/queries';
 import { TrainingView } from '@/components/training/TrainingView';
 import {
   summariseTraining, summariseSessions, exercisePerformance, exerciseProgression,
 } from '@/lib/analytics/training';
-import { apartmentGymExercises } from '@/lib/health/catalog';
+import { personalRecords, trainingConsistency } from '@/lib/analytics/prs';
 import { todayForUser } from '@/app/actions/log';
 import { compareDates } from '@/lib/normalization/dates';
 import { DEFAULT_PROFILE } from '@/lib/defaults';
@@ -24,10 +24,17 @@ export const dynamic = 'force-dynamic';
 export default async function TrainingPage() {
   const { profile, sets, sessions } = await getAnalyticsWindow();
   const today = await todayForUser();
-  const exercises = apartmentGymExercises();
+  // Read from the database, not from the JSON catalog: since 0014 an exercise
+  // can also be created by a sync, and a picker reading the seed would offer
+  // 118 movements while the user's own history contained others.
+  const exercises = await getExerciseLibrary();
 
   const sessionSummary = summariseSessions(sessions, sets);
   const summary = summariseTraining(sets);
+  // Both read the same 90-day window the page is titled with. Records are
+  // derived here because no source publishes them (see lib/analytics/prs.ts).
+  const records = personalRecords(sets);
+  const consistency = trainingConsistency(sessions, sets, today, 12);
 
   const setCountBySession = new Map<string, number>();
   for (const set of sets) {
@@ -56,6 +63,8 @@ export default async function TrainingPage() {
       summary={summary}
       setCountBySession={setCountBySession}
       rows={rows}
+      records={records}
+      consistency={consistency}
       today={today}
       exercises={exercises}
       weightUnit={(profile ?? DEFAULT_PROFILE).weightDisplayUnit}

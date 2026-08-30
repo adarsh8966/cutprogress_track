@@ -220,3 +220,42 @@ noise from reading as progress. Fewer than two sessions returns
 Weekly change is measured **between the 7-day averages** at each end of the
 week, not between two single weigh-ins — one morning reading can sit two pounds
 from the truth on water alone.
+
+## Personal records
+
+`lib/analytics/prs.ts`. Derived from logged working sets, because no source
+publishes them — Hevy's API exposes no personal-record endpoint and no PR field
+on any response. That is the honest arrangement anyway: a record this app shows
+is one it can show the working for.
+
+Per exercise, four records, each carrying the date it was reached and what
+reached it:
+
+| Record | Definition |
+|---|---|
+| Heaviest | greatest `weight_kg` in a working set, whatever the reps |
+| Most reps | greatest `reps` in a working set, whatever the load |
+| Best e1RM | greatest Epley estimate from a single set |
+| Best session volume | greatest Σ(weight × reps) within one session |
+
+**A record keeps the date it was FIRST reached.** Matching a best later does not
+move it — the comparison is `>`, not `>=`. A card that reads "set today" every
+time you match a best is telling you something false about today, and "when did
+this last actually move?" is the question progression turns on.
+
+Warm-up sets are excluded, so adding them can never look like progress. An
+exercise with no load recorded reports a rep record and no weight record, rather
+than a record of 0 kg.
+
+## Training consistency
+
+`trainingConsistency(sessions, sets, end, weeks)`. One bucket per week, oldest
+first, over the whole window.
+
+**Empty weeks are counted as weeks.** Three trained weeks and one missed is 0.75
+sessions per week, not 1 — averaging only the weeks that happened describes a
+training history nobody had, and the notes say how many weeks were empty.
+
+A week with sessions but no set-level detail reports its sessions and its
+minutes with a **null** volume, never a zero: a summary-only session was not
+measured as having done no work.

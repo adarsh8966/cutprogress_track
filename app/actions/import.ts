@@ -957,6 +957,12 @@ async function importOneRecord(
         completed: true,
         source: 'IMPORT_TEXT' as const,
         import_id: importId,
+        // A pasted summary carries a label, which already goes to notes above,
+        // and no external identity of any kind.
+        title: null,
+        external_source: null,
+        external_id: null,
+        external_updated_at: null,
       })),
     ).select('id');
     if (error) return fail(`Workout: ${error.message}`);

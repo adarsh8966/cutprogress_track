@@ -29,6 +29,7 @@ const SOURCE_LABEL: Record<string, string> = {
   HEALTH_CONNECT: 'Health Connect',
   GOOGLE_HEALTH: 'Google Health',
   BEVEL: 'Bevel',
+  HEVY: 'Hevy',
   ESTIMATED: 'estimated',
   OTHER: 'other source',
 };

@@ -18,7 +18,10 @@ something true to say.
   client code.
 - Build a fake integration, or claim Health Connect / Bevel works before it is
   implemented and tested.
-- Scrape Bevel or store third-party credentials.
+- Scrape Bevel, or store a third-party credential in the database. Hevy's
+  official API key lives in a server-side environment variable and nowhere else.
+- Let an external integration write outside what it owns. Hevy is training only:
+  never body weight, measurements, activity, recovery or nutrition.
 - Train an ML model on insufficient data, or ship one that does not beat the
   deterministic baseline.
 
@@ -34,7 +37,12 @@ something true to say.
   observation tables.
 - Keep raw and canonical data separate, and preserve provenance.
 - Normalise units at the boundary. Storage is metric: kg, cm, km, kcal, minutes.
-- Make imports idempotent, enforced by a database constraint.
+- Make imports idempotent, enforced by a database constraint. For an external
+  record that means a unique index on (source, external id), so a re-sync
+  updates one row rather than writing a second.
+- Match an external exercise by stable id, then by EXACT name, then create.
+  Never fuzzily. A duplicate is visible and joinable; a wrong merge fuses two
+  movements' histories permanently.
 - Document calculations, and version models and the Context Pack schema.
 - Aggregate days in the user's timezone, never UTC.
 
@@ -48,6 +56,7 @@ lib/
   normalization/units, timezone-correct dates, canonical resolution
   validation/   safety rails
   health/       exercise catalog, paste parser, idempotency
+  integrations/ external sources (hevy: client, mapper, writer, sync)
   context/      Context Pack generator
   data/         server-only queries and the canonical rebuild
   supabase/     clients, env, database types

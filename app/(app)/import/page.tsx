@@ -7,30 +7,46 @@
  * page claims an integration that does not exist.
  */
 import { ImportWorkbench } from '@/components/import/ImportWorkbench';
+import { HevyPanel } from '@/components/import/HevyPanel';
 import { Card } from '@/components/ui/primitives';
-import { getProfile, getRecentImports } from '@/lib/data/queries';
+import { getProfile, getRecentImports, getSyncRuns } from '@/lib/data/queries';
+import { isHevyConfigured } from '@/lib/integrations/hevy/env';
+import { HEVY_PROVIDER } from '@/lib/integrations/hevy/sync';
 import { todayForUser } from '@/app/actions/log';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ImportPage() {
-  const [today, imports, profile] = await Promise.all([
+  const [today, imports, profile, hevyRuns] = await Promise.all([
     todayForUser(),
     getRecentImports(15),
     getProfile(),
+    getSyncRuns(HEVY_PROVIDER, 5),
   ]);
+  // Read on the server and passed as a boolean: whether the key is SET, never
+  // what it is.
+  const hevyConfigured = isHevyConfigured();
 
   return (
     <div className="space-y-8">
       <header>
         <h1 className="text-xl font-light">Import</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
-          Paste a summary from Bevel, Google Health or your own notes. The parser
-          proposes values; you review and correct them before anything is stored.
-          The original text is kept verbatim, so a parsing mistake found later can
-          always be traced back.
+          Training comes from Hevy automatically. For everything else — weight,
+          waist, nutrition, steps, sleep — paste a summary from Bevel, Google
+          Health or your own notes. The parser proposes values; you review and
+          correct them before anything is stored. The original text is kept
+          verbatim, so a parsing mistake found later can always be traced back.
         </p>
       </header>
+
+      {/*
+        Hevy first: it is the automatic path, and pasting is what you do for
+        everything it does not cover.
+      */}
+      <Card title="Connected apps">
+        <HevyPanel configured={hevyConfigured} runs={hevyRuns} />
+      </Card>
 
       <ImportWorkbench
         today={today}

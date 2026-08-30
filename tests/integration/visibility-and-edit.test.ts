@@ -203,6 +203,7 @@ describe('a full imported day is visible, and every part of it can be corrected'
       const summary = summariseSessions(
         sessions.rows.map((row) => ({
           id: row.id, date: DAY, sessionType: 'PULL',
+          title: null, externalSource: null,
           durationMinutes: Number(row.duration_minutes),
           averageHeartRate: 142, maxHeartRate: 171, calories: 412,
           notes: 'Pull', source: SOURCE, completed: true, importId: null,

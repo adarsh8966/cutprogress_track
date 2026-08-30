@@ -16,6 +16,13 @@ function set(overrides: Partial<LoggedSet> = {}): LoggedSet {
     rir: 2,
     rpe: 8,
     warmup: false,
+    setNumber: 1,
+    exerciseIndex: null,
+    exerciseNotes: null,
+    setType: null,
+    supersetId: null,
+    distanceKm: null,
+    durationSeconds: null,
     ...overrides,
   };
 }
